@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# PackPanel - Script d'Installation & Déploiement Automatisé
-# Distribution de Modpacks conforme au contrat MineLaunched
+# PackPanel - Automated Installation & Deployment Script
+# High-performance, CAS-backed modpack distribution matching the MineLaunched protocol
 # ==============================================================================
 
 set -euo pipefail
 
-# Couleurs pour l'affichage
+# ANSI color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -17,23 +17,22 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}${BOLD}"
 echo "=================================================================="
-echo "          PackPanel - Installation & Déploiement Autonome         "
+echo "          PackPanel - Turnkey Installation & Deployment           "
 echo "=================================================================="
 echo -e "${NC}"
 
-# 1. Vérification des droits root
+# 1. Root check
 if [ "$(id -u)" -ne 0 ]; then
-  echo -e "${RED}[ERREUR] Ce script doit être exécuté avec les privilèges root (sudo).${NC}" >&2
+  echo -e "${RED}[ERROR] This script must be run as root (use sudo).${NC}" >&2
   exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
-# 2. Vérification et installation des dépendances
-echo -e "${CYAN}[1/7] Vérification des prérequis système...${NC}"
+# 2. Prerequisites
+echo -e "${CYAN}[1/7] Checking system dependencies...${NC}"
 
-# Paquets système essentiels
 MISSING_PKGS=()
 for cmd in curl openssl git tar; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -42,7 +41,7 @@ for cmd in curl openssl git tar; do
 done
 
 if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
-  echo -e "${YELLOW}Installation des paquets manquants : ${MISSING_PKGS[*]}...${NC}"
+  echo -e "${YELLOW}Installing missing packages: ${MISSING_PKGS[*]}...${NC}"
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -qq && apt-get install -y -qq "${MISSING_PKGS[@]}"
   elif command -v dnf >/dev/null 2>&1; then
@@ -52,56 +51,55 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
   fi
 fi
 
-# Vérification de Docker
+# Docker check & auto-install
 if ! command -v docker >/dev/null 2>&1; then
-  echo -e "${YELLOW}Docker n'est pas installé. Installation automatique de Docker...${NC}"
+  echo -e "${YELLOW}Docker is not installed. Installing Docker via official script...${NC}"
   curl -fsSL https://get.docker.com | sh
   systemctl enable --now docker || true
 fi
 
-# Vérification de Docker Compose
+# Docker Compose v2 check
 if ! docker compose version >/dev/null 2>&1; then
-  echo -e "${YELLOW}Plugin Docker Compose manquant. Installation...${NC}"
+  echo -e "${YELLOW}Docker Compose plugin missing. Installing...${NC}"
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -qq && apt-get install -y -qq docker-compose-plugin
   else
-    echo -e "${RED}[ERREUR] Veuillez installer Docker Compose v2 manuellement.${NC}" >&2
+    echo -e "${RED}[ERROR] Please install Docker Compose v2 plugin manually.${NC}" >&2
     exit 1
   fi
 fi
 
-echo -e "  ${GREEN}✓${NC} Docker et Docker Compose sont opérationnels."
+echo -e "  ${GREEN}✓${NC} Docker and Docker Compose v2 ready."
 
-# 3. Configuration des répertoires et domaines
-echo -e "${CYAN}[2/7] Configuration des paramètres d'instance...${NC}"
+# 3. Instance Configuration
+echo -e "${CYAN}[2/7] Configuring parameters...${NC}"
 
 DEFAULT_APP_DIR="${SCRIPT_DIR}"
 if [ "${SCRIPT_DIR}" = "/root" ] || [ "${SCRIPT_DIR}" = "/tmp" ]; then
   DEFAULT_APP_DIR="/opt/packpanel"
 fi
 
-# Variables configurables (interactif ou pré-défini via ENV)
 APP_DIR="${APP_DIR:-$DEFAULT_APP_DIR}"
 DATA_DIR="${DATA_DIR:-/srv/packpanel}"
 ADMIN_ORIGIN_PORT="${ADMIN_ORIGIN_PORT:-8080}"
 FILES_ORIGIN_PORT="${FILES_ORIGIN_PORT:-8081}"
-ADMIN_FQDN="${ADMIN_FQDN:-panel.mccdn.internal}"
-FILES_FQDN="${FILES_FQDN:-mccdn.internal}"
+ADMIN_FQDN="${ADMIN_FQDN:-panel.example.com}"
+FILES_FQDN="${FILES_FQDN:-cdn.example.com}"
 ADMIN_LOGIN="${ADMIN_LOGIN:-admin}"
 
-# Si mode interactif (TTY) et fichier .env inexistant
+# Interactive prompts if running in a TTY and .env doesn't exist
 if [ -t 0 ] && [ ! -f "${APP_DIR}/.env" ] && [ "${NON_INTERACTIVE:-0}" != "1" ]; then
-  read -rp "Répertoire applicatif [$APP_DIR] : " input && APP_DIR="${input:-$APP_DIR}"
-  read -rp "Répertoire de stockage persistant [$DATA_DIR] : " input && DATA_DIR="${input:-$DATA_DIR}"
-  read -rp "Port d'écoute Administration & API [$ADMIN_ORIGIN_PORT] : " input && ADMIN_ORIGIN_PORT="${input:-$ADMIN_ORIGIN_PORT}"
-  read -rp "Port d'écoute Distribution MineLaunched [$FILES_ORIGIN_PORT] : " input && FILES_ORIGIN_PORT="${input:-$FILES_ORIGIN_PORT}"
-  read -rp "Domaine / FQDN du panel d'administration [$ADMIN_FQDN] : " input && ADMIN_FQDN="${input:-$ADMIN_FQDN}"
-  read -rp "Domaine / FQDN public de distribution de fichiers [$FILES_FQDN] : " input && FILES_FQDN="${input:-$FILES_FQDN}"
-  read -rp "Identifiant du compte administrateur [$ADMIN_LOGIN] : " input && ADMIN_LOGIN="${input:-$ADMIN_LOGIN}"
+  read -rp "Application directory [$APP_DIR]: " input && APP_DIR="${input:-$APP_DIR}"
+  read -rp "Storage directory [$DATA_DIR]: " input && DATA_DIR="${input:-$DATA_DIR}"
+  read -rp "Admin Panel & API Port [$ADMIN_ORIGIN_PORT]: " input && ADMIN_ORIGIN_PORT="${input:-$ADMIN_ORIGIN_PORT}"
+  read -rp "Public Distribution Port [$FILES_ORIGIN_PORT]: " input && FILES_ORIGIN_PORT="${input:-$FILES_ORIGIN_PORT}"
+  read -rp "Admin Panel FQDN / Domain [$ADMIN_FQDN]: " input && ADMIN_FQDN="${input:-$ADMIN_FQDN}"
+  read -rp "Public Files FQDN / Domain [$FILES_FQDN]: " input && FILES_FQDN="${input:-$FILES_FQDN}"
+  read -rp "Admin username [$ADMIN_LOGIN]: " input && ADMIN_LOGIN="${input:-$ADMIN_LOGIN}"
 fi
 
-# 4. Préparation de l'arborescence physique
-echo -e "${CYAN}[3/7] Création des répertoires de stockage...${NC}"
+# 4. Storage Directory Structure
+echo -e "${CYAN}[3/7] Setting up storage structure...${NC}"
 mkdir -p "${DATA_DIR}/storage/objects"
 mkdir -p "${DATA_DIR}/storage/endpoints"
 mkdir -p "${DATA_DIR}/storage/uploads"
@@ -111,15 +109,14 @@ chmod 750 "${DATA_DIR}"
 chmod 750 "${DATA_DIR}/storage"
 chmod 700 "${DATA_DIR}/backups"
 
-# Déplacement ou copie vers APP_DIR si exécuté ailleurs
 if [ "${SCRIPT_DIR}" != "${APP_DIR}" ]; then
   mkdir -p "${APP_DIR}"
   cp -rn "${SCRIPT_DIR}"/* "${APP_DIR}/" 2>/dev/null || true
   cd "${APP_DIR}"
 fi
 
-# 5. Génération des secrets et du fichier .env
-echo -e "${CYAN}[4/7] Génération des secrets cryptographiques...${NC}"
+# 5. Cryptographic secrets & .env
+echo -e "${CYAN}[4/7] Generating cryptographic secrets...${NC}"
 
 ENV_FILE="${APP_DIR}/.env"
 if [ ! -f "$ENV_FILE" ]; then
@@ -128,7 +125,7 @@ if [ ! -f "$ENV_FILE" ]; then
   ADMIN_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
 
   cat > "$ENV_FILE" <<EOF
-# PackPanel - Configuration de Production
+# PackPanel - Production Configuration
 ADMIN_ORIGIN_PORT=${ADMIN_ORIGIN_PORT}
 FILES_ORIGIN_PORT=${FILES_ORIGIN_PORT}
 ADMIN_FQDN=${ADMIN_FQDN}
@@ -148,36 +145,34 @@ EOF
 
   chmod 600 "$ENV_FILE"
 
-  # Consignation sécurisée des identifiants initiaux
   CREDS_FILE="${DATA_DIR}/admin_credentials.txt"
   cat > "$CREDS_FILE" <<EOF
-# PackPanel - Identifiants d'Administration Initiaux
+# PackPanel Initial Credentials
 ADMIN_LOGIN=${ADMIN_LOGIN}
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
-DATE_INITIALISATION=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+INITIALIZED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EOF
   chmod 600 "$CREDS_FILE"
-  echo -e "  ${GREEN}✓${NC} Secrets générés et protégés (chmod 600)."
+  echo -e "  ${GREEN}✓${NC} Secrets generated and secured (chmod 600)."
 else
-  echo -e "  ${YELLOW}ℹ${NC} Fichier .env existant détecté, conservation des paramètres."
-  ADMIN_PASSWORD=$(grep "^ADMIN_PASSWORD=" "${DATA_DIR}/admin_credentials.txt" 2>/dev/null | cut -d'=' -f2 || echo "<inchangé>")
+  echo -e "  ${YELLOW}ℹ${NC} Existing .env found, preserving configuration."
+  ADMIN_PASSWORD=$(grep "^ADMIN_PASSWORD=" "${DATA_DIR}/admin_credentials.txt" 2>/dev/null | cut -d'=' -f2 || echo "<unchanged>")
 fi
 
-# 6. Compilation et démarrage des conteneurs Docker
-echo -e "${CYAN}[5/7] Compilation et démarrage de la stack Docker Compose...${NC}"
+# 6. Build and launch Docker containers
+echo -e "${CYAN}[5/7] Building and launching Docker Compose stack...${NC}"
 
-# Construction frontend si node est dispo dans conteneur
+# Compile frontend inside container if node is not on host
 docker run --rm -v "${APP_DIR}/frontend":/app -w /app node:20-bookworm-slim sh -c "npm ci && npm run build" >/dev/null 2>&1 || true
 
 docker compose build api worker
 docker compose up -d
 
-echo -e "  ${GREEN}✓${NC} Conteneurs démarrés avec succès."
+echo -e "  ${GREEN}✓${NC} Containers started."
 
-# 7. Initialisation de la base de données & compte admin
-echo -e "${CYAN}[6/7] Initialisation de la base PostgreSQL et initialisation du compte admin...${NC}"
+# 7. Database schema & Admin account seed
+echo -e "${CYAN}[6/7] Initializing PostgreSQL schema & admin account...${NC}"
 
-# Attente que PostgreSQL soit opérationnel
 MAX_RETRIES=30
 until docker exec packpanel-postgres pg_isready -U packpanel -d packpanel >/dev/null 2>&1 || [ $MAX_RETRIES -eq 0 ]; do
   sleep 1
@@ -185,14 +180,12 @@ until docker exec packpanel-postgres pg_isready -U packpanel -d packpanel >/dev/
 done
 
 if [ $MAX_RETRIES -eq 0 ]; then
-  echo -e "${RED}[ERREUR] PostgreSQL n'a pas répondu dans le délai imparti.${NC}" >&2
+  echo -e "${RED}[ERROR] PostgreSQL failed to start in time.${NC}" >&2
   exit 1
 fi
 
-# Application du schéma
 docker exec -i packpanel-postgres psql -U packpanel -d packpanel < "${APP_DIR}/backend/src/db/schema.sql" >/dev/null 2>&1 || true
 
-# Initialisation du compte admin si nécessaire
 docker exec -i packpanel-api node -e "
 const { query } = require('./dist/db');
 const { hashPassword } = require('./dist/auth/argon2');
@@ -201,49 +194,46 @@ const { hashPassword } = require('./dist/auth/argon2');
   if (existing.rows.length === 0) {
     const hash = await hashPassword('${ADMIN_PASSWORD}');
     await query('INSERT INTO users (username, password_hash, role) VALUES (\$1, \$2, \$3)', ['${ADMIN_LOGIN}', hash, 'admin']);
-    console.log('Compte admin créé.');
+    console.log('Admin account created.');
   }
   process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });
 " >/dev/null 2>&1 || true
 
-# Redémarrage de Nginx pour prise en compte DNS du réseau Docker
 docker compose restart nginx >/dev/null 2>&1
 
-# 8. Test de santé (Smoke test local)
-echo -e "${CYAN}[7/7] Vérification du bon fonctionnement...${NC}"
+# 8. Health check
+echo -e "${CYAN}[7/7] Verifying endpoints...${NC}"
 sleep 2
 
 HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${ADMIN_ORIGIN_PORT}/api/health" || echo "000")
 if [ "$HEALTH_STATUS" -eq 200 ]; then
-  echo -e "  ${GREEN}✓${NC} Listener d'Administration (port ${ADMIN_ORIGIN_PORT}) : Opérationnel (HTTP 200)"
+  echo -e "  ${GREEN}✓${NC} Admin Panel (:8080): Healthy (HTTP 200)"
 else
-  echo -e "  ${YELLOW}!${NC} Listener d'Administration : Statut HTTP $HEALTH_STATUS reçu"
+  echo -e "  ${YELLOW}!${NC} Admin Panel: HTTP $HEALTH_STATUS"
 fi
 
 FILES_404=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${FILES_ORIGIN_PORT}/nonexistent/index.php" || echo "000")
 if [ "$FILES_404" -eq 404 ]; then
-  echo -e "  ${GREEN}✓${NC} Listener de Distribution MineLaunched (port ${FILES_ORIGIN_PORT}) : Opérationnel et isolé"
+  echo -e "  ${GREEN}✓${NC} MineLaunched File Distribution (:8081): Active & Isolated"
 fi
 
-# Résumé final
+# Summary
 echo ""
 echo -e "${GREEN}${BOLD}==================================================================${NC}"
-echo -e "${GREEN}${BOLD}         PackPanel a été installé et démarré avec succès !        ${NC}"
+echo -e "${GREEN}${BOLD}         PackPanel has been successfully installed!               ${NC}"
 echo -e "${GREEN}${BOLD}==================================================================${NC}"
 echo ""
-echo -e "  ${BOLD}URL Panel d'Administration :${NC} http://localhost:${ADMIN_ORIGIN_PORT}/"
-echo -e "  ${BOLD}URL Distribution Publique  :${NC} http://localhost:${FILES_ORIGIN_PORT}/"
+echo -e "  ${BOLD}Admin Panel URL :${NC} http://localhost:${ADMIN_ORIGIN_PORT}/"
+echo -e "  ${BOLD}Public CDN URL  :${NC} http://localhost:${FILES_ORIGIN_PORT}/"
 echo ""
-echo -e "  ${BOLD}Identifiants d'accès :${NC}"
-echo -e "  • Utilisateur : ${CYAN}${ADMIN_LOGIN}${NC}"
-echo -e "  • Mot de passe : ${CYAN}${ADMIN_PASSWORD}${NC}"
-echo -e "  • Fichier de sauvegarde : ${DATA_DIR}/admin_credentials.txt (permissions 600)"
+echo -e "  ${BOLD}Initial Credentials :${NC}"
+echo -e "  • Username : ${CYAN}${ADMIN_LOGIN}${NC}"
+echo -e "  • Password : ${CYAN}${ADMIN_PASSWORD}${NC}"
+echo -e "  • File     : ${DATA_DIR}/admin_credentials.txt (permissions 600)"
 echo ""
-echo -e "  ${BOLD}Pour exposer PackPanel avec Zoraxy & Cloudflare :${NC}"
-echo -e "  1. Créez une règle Zoraxy vers ${BOLD}http://<IP_SERVEUR>:${ADMIN_ORIGIN_PORT}${NC} pour ${ADMIN_FQDN}"
-echo -e "     (Activez WebSocket/SSE, désactivez le buffering)."
-echo -e "  2. Créez une règle Zoraxy vers ${BOLD}http://<IP_SERVEUR>:${FILES_ORIGIN_PORT}${NC} pour ${FILES_FQDN}"
-echo -e "     (Activez HTTP/2 et Keep-Alive)."
-echo -e "  3. Consultez ${BOLD}${APP_DIR}/docs/ZORAXY_CLOUDFLARE.md${NC} pour le détail des règles de cache."
+echo -e "  ${BOLD}Reverse Proxy & CDN Setup :${NC}"
+echo -e "  1. Forward ${ADMIN_FQDN} -> http://<SERVER_IP>:${ADMIN_ORIGIN_PORT} (Enable WebSocket/SSE, disable buffering)"
+echo -e "  2. Forward ${FILES_FQDN} -> http://<SERVER_IP>:${FILES_ORIGIN_PORT} (Enable HTTP/2 & Keep-Alive)"
+echo -e "  3. See ${BOLD}${APP_DIR}/docs/ZORAXY_CLOUDFLARE.md${NC} for Cloudflare Cache Rules."
 echo ""
