@@ -57,8 +57,12 @@ export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({ isOpen, onClose 
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<{ secret: string; otpauthUrl: string; recoveryCodes: string[] }>('/auth/2fa/setup');
-      setSetupData(res);
+      const res = await api.get<{ secret: string; otpauthUrl?: string; otpauthUri?: string; recoveryCodes: string[] }>('/auth/2fa/setup');
+      setSetupData({
+        secret: res.secret,
+        otpauthUrl: res.otpauthUrl || res.otpauthUri || '',
+        recoveryCodes: res.recoveryCodes
+      });
     } catch (err: any) {
       setError(err.message || 'Impossible de générer le secret 2FA');
     } finally {
@@ -103,6 +107,7 @@ export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({ isOpen, onClose 
     try {
       await api.post('/auth/2fa/enable', {
         secret: setupData.secret,
+        code: confirmCode.trim(),
         totpCode: confirmCode.trim(),
         recoveryCodes: setupData.recoveryCodes
       });

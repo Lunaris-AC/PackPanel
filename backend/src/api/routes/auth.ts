@@ -139,8 +139,8 @@ export async function authRoutes(fastify: FastifyInstance) {
     });
   });
 
-  // 2FA: Initiate Setup
-  fastify.post('/2fa/setup', { preHandler: [authenticateRequest] }, async (req, reply) => {
+  // 2FA: Initiate Setup (supports both GET and POST)
+  const handle2faSetup = async (req: any, reply: any) => {
     const secret = generateTotpSecret();
     const recoveryCodes = generateRecoveryCodes(8);
     const otpauthUri = getOtpAuthUri(req.user!.username, secret);
@@ -155,19 +155,29 @@ export async function authRoutes(fastify: FastifyInstance) {
     return reply.send({
       secret,
       otpauthUri,
+      otpauthUrl: otpauthUri,
       recoveryCodes
     });
-  });
+  };
+
+  fastify.get('/2fa/setup', { preHandler: [authenticateRequest] }, handle2faSetup);
+  fastify.post('/2fa/setup', { preHandler: [authenticateRequest] }, handle2faSetup);
 
   // 2FA: Confirm & Enable
   fastify.post('/2fa/enable', { preHandler: [authenticateRequest] }, async (req, reply) => {
     const schema = z.object({
-      code: z.string().min(6).max(8)
+      code: z.string().optional(),
+      totpCode: z.string().optional()
+    }).refine(data => !!(data.code || data.totpCode), {
+      message: 'Code 2FA requis'
     });
+
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'Code 2FA invalide' });
+      return reply.status(400).send({ error: 'Code 2FA requis' });
     }
+
+    const token = (parsed.data.code || parsed.data.totpCode)!.trim();
 
     const userRes = await query('SELECT totp_secret FROM users WHERE id = $1', [req.user!.userId]);
     const secret = userRes.rows[0]?.totp_secret;
@@ -175,7 +185,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Configuration 2FA non initialisée' });
     }
 
-    const valid = verifyTOTP(parsed.data.code, secret);
+    const valid = verifyTOTP(token, secret);
     if (!valid) {
       return reply.status(400).send({ error: 'Code d’authentification incorrect ou expiré' });
     }
