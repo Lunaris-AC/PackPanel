@@ -136,10 +136,7 @@ CREATE TABLE IF NOT EXISTS upload_files (
     status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'staged', 'uploading', 'uploaded', 'hashing', 'verified', 'failed')),
     error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (session_id, relative_path)
 );
 CREATE INDEX IF NOT EXISTS idx_upload_files_session ON upload_files(session_id);
