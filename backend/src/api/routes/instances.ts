@@ -257,7 +257,7 @@ export async function buildInstanceManifestV2(instanceId: string): Promise<any |
   if (!inst.endpoint_id) return null;
 
   const relRes = await query(`
-    SELECT r.id, r.release_id, r.version_num, r.updated_at
+    SELECT r.id, r.release_id, r.version_num, r.published_at
     FROM releases r
     WHERE r.endpoint_id = $1 AND r.is_active = TRUE
     LIMIT 1
