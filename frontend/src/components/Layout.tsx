@@ -136,7 +136,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
               />
               <span className="font-mono">{sseConnected ? 'Live SSE' : 'Offline'}</span>
             </span>
-            <span className="font-mono text-[10px] text-zinc-400">v1.0.0</span>
+            <span className="font-mono text-[10px] text-zinc-400">v2.0.0</span>
           </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-zinc-200/70 dark:border-zinc-800/70 px-2">

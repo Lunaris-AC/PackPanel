@@ -67,7 +67,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
     if (!endpoint) return;
     navigator.clipboard.writeText(endpoint.manifest_url);
     setCopied(true);
-    toast.success('URL MineLaunched copiée !');
+    toast.success('URL du manifeste copiée !');
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -146,7 +146,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
               <button
                 onClick={handleCopyUrl}
                 className="p-1 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition shrink-0"
-                title="Copier l'URL MineLaunched"
+                title="Copier l'URL du manifeste"
               >
                 {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -238,7 +238,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
 
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
               <span className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">
-                Directives de nettoyage MineLaunched
+                Directives de synchronisation & nettoyage
               </span>
 
               <label className="flex items-center space-x-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">

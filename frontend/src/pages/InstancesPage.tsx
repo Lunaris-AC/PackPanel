@@ -40,7 +40,6 @@ interface MinecraftInstance {
   active_total_files?: number;
   active_total_bytes?: number;
   manifest_url?: string;
-  legacy_url?: string;
   created_at: string;
 }
 
@@ -406,7 +405,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
                 <option value="1.19.4">1.19.4</option>
                 <option value="1.18.2">1.18.2</option>
                 <option value="1.16.5">1.16.5 (Standard moddé)</option>
-                <option value="1.12.2">1.12.2 (Legacy Forge)</option>
+                <option value="1.12.2">1.12.2 (Forge)</option>
                 <option value="1.7.10">1.7.10</option>
               </select>
             </div>

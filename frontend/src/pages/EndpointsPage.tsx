@@ -344,7 +344,7 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
 
           <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
             <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              Directives de nettoyage MineLaunched (dirCheckUselessFiles)
+              Directives de synchronisation & nettoyage des dossiers
             </span>
 
             <label className="flex items-center space-x-2 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">

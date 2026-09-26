@@ -543,7 +543,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
               Aucun fichier dans cet endpoint
             </h3>
             <p className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto">
-              Glissez-déposez vos mods, configurations ou dossiers complets ici pour publier la première version MineLaunched.
+              Glissez-déposez vos mods, configurations ou dossiers complets ici pour publier la première version.
             </p>
             {canEdit && (
               <div className="mt-4 flex items-center justify-center space-x-2">

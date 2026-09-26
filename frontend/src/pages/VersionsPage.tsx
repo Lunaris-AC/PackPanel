@@ -209,7 +209,7 @@ export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId }) => {
                     <div className="flex items-center justify-end space-x-1">
                       <button
                         onClick={() => handleViewManifest(ver)}
-                        title="Voir le manifeste MineLaunched"
+                        title="Voir le manifeste"
                         className="p-1.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                       >
                         <FileCode className="w-4 h-4" />
@@ -261,7 +261,7 @@ export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId }) => {
       <Modal
         isOpen={manifestModalOpen}
         onClose={() => setManifestModalOpen(false)}
-        title={`Manifeste MineLaunched - ${manifestReleaseId}`}
+        title={`Manifeste de version - ${manifestReleaseId}`}
         maxWidth="max-w-4xl"
       >
         <pre className="p-4 bg-slate-900 text-slate-100 rounded-xl overflow-x-auto text-xs font-mono max-h-[70vh]">
