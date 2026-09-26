@@ -14,10 +14,16 @@ Tous les mots de passe sont stockés sous forme de hachages **Argon2id**, la fon
 - `parallelism: 4`
 - Protection contre les attaques temporelles (*timing attacks*) via comparaison en temps constant.
 
-### 1.2 Gestion des Sessions & Cookies
-- Les sessions utilisent des cookies HTTP signés cryptographiquement via une clé secrète de session (`SESSION_SECRET`).
-- En-têtes appliqués : `HttpOnly` (inaccessible au JavaScript client, prévention XSS), `SameSite=Lax` (protection CSRF), et `Path=/`.
-- Révocation immédiate lors de la déconnexion et expiration configurable.
+### 1.2 Gestion des Sessions & Protection CSRF
+- Les sessions utilisent des identifiants et jetons aléatoires de 256 bits (`crypto.randomBytes(32)`).
+- Les cookies de session appliquent `HttpOnly` (inaccessible au JavaScript, protection XSS) et `SameSite=Lax`.
+- **Validation Stricte d'Origine (CSRF)** : Le middleware `enforceOriginCheck` valide systématiquement l'en-tête `Origin` ou `Referer` de toutes les requêtes mutantes (`POST`, `PUT`, `DELETE`, `PATCH`). Les requêtes provenant d'origines non autorisées sont immédiatement rejetées avec un code HTTP 403.
+- Révocation de sessions : lors du changement de mot de passe, toutes les autres sessions actives de l'utilisateur sont immédiatement révoquées en base.
+
+### 1.3 Double Authentification (2FA / TOTP) & Codes de Secours
+- Conforme aux standards RFC 6238 (TOTP SHA-1, fenêtre de 30 secondes, tolérance d'une période).
+- **Hachage HMAC-SHA256 des Codes de Secours** : Les codes de secours générés (`ABCD-1234`) ne sont **jamais stockés en clair** en base de données. Chaque code est haché avec l'identifiant unique de l'utilisateur comme sel cryptographique.
+- **Anti-Force-Brute** : La validation des codes 2FA est soumise au même limiteur de débit que l'authentification principale, empêchant le brute-force des codes TOTP à 6 chiffres.
 
 ### 1.3 Matrice des Rôles (RBAC)
 
@@ -59,6 +65,17 @@ Puisque les clients Minecraft s'exécutent très fréquemment sur Windows, le se
 
 ### 2.4 Détection des Archives Nues (Manifestes CurseForge / Modrinth)
 Un piège courant consiste à téléverser le petit fichier ZIP de modpack exporté depuis CurseForge (contenant uniquement `manifest.json` sans les fichiers `.jar` de mods). PackPanel analyse l'archive à l'ingestion : s'il s'agit d'un tel export sans mod réel, l'import est rejeté avec un message d'avertissement clair guidant l'utilisateur.
+
+### 2.5 Verrous Transactionnels (PostgreSQL Advisory Locks)
+Lors de la création et publication d'une version :
+- Un verrou exclusif au niveau de l'endpoint est posé via `SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || endpoint_id))`.
+- Empêche toute concurrence sur l'attribution de `MAX(version_num) + 1` ou l'écrasement de répertoires physiques lors de publications simultanées.
+- Les fichiers temporaires d'écriture atomique utilisent des noms uniques isolés (`index.php.tmp.<pid>.<time>.<nonce>`).
+
+### 2.6 Prévention des Collisions de Manifestes
+- Le manifeste interne de la release est enregistré sous `.packpanel_manifest.json`.
+- Si le modpack téléversé contient son propre fichier `manifest.json` à la racine (ex: manifest CurseForge ou fabric), il n'est **jamais écrasé** par le manifeste MineLaunched.
+- Les clients MineLaunched lisent exclusivement le point d'entrée `index.php`.
 
 ---
 

@@ -118,3 +118,51 @@ Plutôt que d'introduire une dépendance externe fragile comme Redis, PackPanel 
 - **Atomicité et Parallélisme** : Les workers réservent les tâches via la clause `FOR UPDATE SKIP LOCKED`.
 - **Mécanisme de Heartbeat** : Toutes les 30 secondes, le worker met à jour `heartbeat_at`. En cas de crash inattendu, une tâche bloquée depuis plus de 2 minutes est automatiquement libérée et ré-attribuée.
 - **Retry Backoff** : Les échecs transitoires sont retentés avec un délai progressif jusqu'à `max_attempts`.
+
+---
+
+## 6. Architecture PackPanel V2 : Moteur Indépendant & Launchers
+
+PackPanel V2 introduit un écosystème complet permettant de distribuer, synchroniser et exécuter des instances Minecraft avec son propre moteur et ses propres launchers de bureau.
+
+```mermaid
+flowchart LR
+    subgraph Panel["PackPanel V2 (Serveur)"]
+        InstancesAPI["API Instances (Vanilla, Forge, NeoForge, Fabric, Quilt)"]
+        LaunchersAPI["API Launchers & Templates"]
+        StaticManifests["Nginx CDN (packpanel.json + index.php)"]
+    end
+
+    subgraph LauncherApp["Desktop Launcher (Electron)"]
+        MainProcess["Processus Principal Node.js"]
+        PreloadBridge["Preload Sécurisé (ContextBridge)"]
+        RendererUI["UI React (Minimal, Community, Network)"]
+    end
+
+    subgraph Engine["Moteur PackPanel (@packpanel/engine)"]
+        SyncEngine["Synchroniseur Delta & Sanctuarisation"]
+        JavaManager["Java Runtime Manager (Adoptium)"]
+        AuthProviders["Auth Microsoft (OAuth2/XBL) & Offline (UUIDv3)"]
+        ProcessSupervisor["Superviseur Processus Minecraft"]
+    end
+
+    InstancesAPI --> StaticManifests
+    LaunchersAPI --> StaticManifests
+
+    StaticManifests --> SyncEngine
+    RendererUI --> PreloadBridge --> MainProcess
+    MainProcess --> Engine
+    Engine --> MinecraftProcess["Processus Java Minecraft"]
+```
+
+### 6.1 Moteur Minecraft Indépendant (`@packpanel/engine`)
+- **Indépendance Totale** : Strictement aucune dépendance à des SDKs ou moteurs tiers (ni EML, ni XMCL, ni minecraft-launcher-core, ni Helios, ni Prism).
+- **Résolution Officielle** : Utilise le manifest Mojang piston-meta, les dépôts officiels Fabric Meta, Quilt Meta, Forge Maven et NeoForge Maven.
+- **Gestionnaire Java** : Détecte l'environnement local ou télécharge de manière isolée le JRE Eclipse Temurin officiel via l'API Adoptium (Java 8, 17, 21).
+- **Sanctuarisation des Données Joueurs** : Les sauvegardes solo (`saves/`), captures d'écran (`screenshots/`), configurations d'options (`options.txt`, `optionsof.txt`) et listes de serveurs (`servers.dat`) ne sont jamais écrasées ni supprimées lors des synchronisations de modpacks.
+
+### 6.2 Sécurité Desktop Electron (`@packpanel/launcher`)
+- `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`.
+- Aucun accès direct depuis le renderer aux fichiers locaux, aux jetons ou aux processus enfants.
+- Communication exclusive par bridge IPC typé (`window.packpanel`).
+

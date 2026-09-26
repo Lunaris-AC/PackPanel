@@ -54,7 +54,11 @@ En cas de défaillance matérielle ou de corruption de données :
 ```bash
 /opt/packpanel/scripts/restore.sh /srv/packpanel/backups/packpanel_backup_YYYYMMDD_HHMMSS.tar.gz
 ```
-Le script vous demandera une confirmation avant d'écraser la base de données et de synchroniser les objets CAS.
+Le script termine proprement les connexions actives vers la base de données, purge la base, réimporte le schéma et restaure l'ensemble des objets CAS.
+Pour une exécution automatisée ou non-interactive (CI/CD) :
+```bash
+/opt/packpanel/scripts/restore.sh -y /srv/packpanel/backups/packpanel_backup_YYYYMMDD_HHMMSS.tar.gz
+```
 
 ---
 

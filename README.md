@@ -7,35 +7,28 @@
 [![Fastify](https://img.shields.io/badge/Fastify-4-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![MineLaunched](https://img.shields.io/badge/MineLaunched-100%25%20Compatible-green.svg)](docs/TEST_REPORT.md)
 
-**PackPanel** is a high-performance, self-hosted modpack distribution platform and management console designed specifically for **MineLaunched** launchers.
+**PackPanel V2** is an all-in-one, self-hosted modpack distribution platform, independent Minecraft engine, and custom launcher creation suite.
 
-It replaces the legacy practice of dynamic PHP scripts that scan directories and recalculate SHA-1 hashes on every single HTTP request. PackPanel shifts all hashing and manifest generation to ingestion time, storing assets in Content-Addressed Storage (CAS) and delivering immutable static releases directly through Nginx at line rate.
-
----
-
-## ⚡ The Problem vs. The PackPanel Solution
-
-| Legacy Dynamic Hosting (PHP script) | PackPanel Architecture |
-| :--- | :--- |
-| Traverses the filesystem on every client launch request | Ingests once, dual-hashes in a single stream (SHA-1 + SHA-256) |
-| Recalculates SHA-1 for every file on every HTTP request | Pre-bakes atomic static `index.php` manifest at release time |
-| 50 players connecting at once crashes server disk I/O | Nginx serves static JSON directly; 99% absorbable by Edge CDN |
-| Large ZIP uploads fail on network glitches | Resumable chunked **TUS** protocol with retry support |
-| Broken uploads wipe client files via empty JSON arrays | Strict guardrails: 404 on missing releases, never wipes clients |
-| Admin panel and public files share the same port and PHP runtime | **Dual-listener isolation**: Port 8080 (Admin/API), Port 8081 (Static CDN) |
+It provides non-developer community administrators with a no-code web console to create Minecraft instances (**Vanilla, Forge, NeoForge, Fabric, Quilt**), manage mods via a web file explorer, configure **Microsoft and Offline** authentication, customize desktop launchers with official templates (**Minimal, Community, Network**), and distribute releases instantly with 100% backward compatibility for **MineLaunched** (`index.php`) and native V2 protocols (`packpanel.json`).
 
 ---
 
-## ✨ Features
+## ⚡ Key Highlights of PackPanel V2
 
-- **Strict MineLaunched Protocol Compliance**:
-  - Deterministic parent-first directory sorting.
-  - Lowercase 40-character hexadecimal SHA-1 checksums.
-  - Directories formatted with trailing slashes and `checksumSHA1: false`.
-  - Configurable `dirCheckUselessFiles` cleanup directives placed at the end of the payload.
-  - Safe URL encoding for spaces (`%20`), accents, plus signs (`+`), and hashtags (`#`).
-  - Full HTTP 206 Partial Content (Range Requests) support for multi-threaded chunked downloads.
-- **Content-Addressed Storage (CAS)**:
+- **Independent Minecraft Engine (`@packpanel/engine`)**:
+  - **Zero Third-Party SDK Dependencies**: Built from scratch in pure TypeScript without EML, XMCL, or minecraft-launcher-core.
+  - Complete version resolution from official Mojang Piston-Meta, Fabric Meta, Quilt Meta, Forge Maven, and NeoForge Maven.
+  - Automatic Java provisioning via Eclipse Temurin / Adoptium API (Java 8, 17, 21).
+  - Native libraries extraction, rule evaluation, and game process supervision with crash report analysis.
+  - **Player Data Protection**: Local player saves (`saves/`), screenshots (`screenshots/`), client options (`options.txt`), and server lists (`servers.dat`) are sanctuarized and never overwritten during modpack synchronizations.
+
+- **Custom Desktop Launcher Creator (`@packpanel/launcher`)**:
+  - Secure Electron application (`contextIsolation: true`, typed IPC bridge).
+  - 3 official templates: **Minimal** (1-click launch), **Community** (news feed, Discord widget, server status), **Network** (multi-instances sidebar).
+  - Full branding customizer from the web panel: accent color picker, title, logo, backgrounds.
+  - Dual identity provider support: Microsoft Account OAuth2 (Xbox Live, XSTS) and Offline pseudonym mode.
+
+- **Content-Addressed Storage (CAS) & Dual-Protocol CDN**:
   - Deduplicated physical storage keyed by SHA-256 in `/srv/packpanel/storage/objects/`.
   - Releases assembled using hardlinks—zero duplicate disk space across iterations.
 - **Autonomous Static Delivery**:
