@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   FolderOpen,
-  UploadCloud,
   History,
   Settings,
   Copy,
@@ -15,7 +14,6 @@ import { Endpoint } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { ExplorerPage } from './ExplorerPage';
-import { UploadPage } from './UploadPage';
 import { VersionsPage } from './VersionsPage';
 
 interface EndpointDetailPageProps {
@@ -30,7 +28,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
 
   const [endpoint, setEndpoint] = useState<Endpoint | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'explorer' | 'upload' | 'versions' | 'settings'>('explorer');
+  const [activeTab, setActiveTab] = useState<'explorer' | 'versions' | 'settings'>('explorer');
   const [copied, setCopied] = useState(false);
 
   // Settings form state
@@ -175,20 +173,6 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
             Explorateur de fichiers
           </button>
 
-          {canEdit && (
-            <button
-              onClick={() => setActiveTab('upload')}
-              className={`flex items-center px-3.5 py-2 rounded-xl transition ${
-                activeTab === 'upload'
-                  ? 'bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              <UploadCloud className="w-4 h-4 mr-2" />
-              Téléversement & Import
-            </button>
-          )}
-
           <button
             onClick={() => setActiveTab('versions')}
             className={`flex items-center px-3.5 py-2 rounded-xl transition ${
@@ -219,15 +203,6 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
 
       {/* Tab Panels */}
       {activeTab === 'explorer' && <ExplorerPage endpointId={endpointId} />}
-      {activeTab === 'upload' && (
-        <UploadPage
-          endpointId={endpointId}
-          onSuccess={() => {
-            loadEndpoint();
-            setActiveTab('explorer');
-          }}
-        />
-      )}
       {activeTab === 'versions' && <VersionsPage endpointId={endpointId} />}
       {activeTab === 'settings' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm max-w-2xl">

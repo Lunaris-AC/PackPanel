@@ -185,3 +185,23 @@ CREATE TABLE IF NOT EXISTS system_settings (
     value JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- File Change History with Undo capability
+CREATE TABLE IF NOT EXISTS file_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    endpoint_id UUID NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+    release_id UUID REFERENCES releases(id) ON DELETE SET NULL,
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(20) NOT NULL CHECK (action IN ('create', 'edit', 'delete', 'undo')),
+    relative_path TEXT NOT NULL,
+    previous_sha256 VARCHAR(64) REFERENCES objects(sha256) ON DELETE SET NULL,
+    previous_sha1 VARCHAR(40),
+    previous_size BIGINT DEFAULT 0,
+    new_sha256 VARCHAR(64) REFERENCES objects(sha256) ON DELETE SET NULL,
+    new_sha1 VARCHAR(40),
+    new_size BIGINT DEFAULT 0,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_file_history_endpoint ON file_history(endpoint_id, created_at DESC);
+

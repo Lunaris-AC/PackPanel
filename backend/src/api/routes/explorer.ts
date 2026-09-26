@@ -283,6 +283,21 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     await storeBufferInCas(buf, sha256, sha1);
 
 
+    const activeRelRes = await query(
+      'SELECT id FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1',
+      [endpointId]
+    );
+    let existingFile: any = null;
+    if (activeRelRes.rows.length > 0) {
+      const efRes = await query(
+        'SELECT sha256, sha1, size_bytes FROM release_files WHERE release_id = $1 AND relative_path = $2',
+        [activeRelRes.rows[0].id, sanitizedPath]
+      );
+      if (efRes.rows.length > 0) {
+        existingFile = efRes.rows[0];
+      }
+    }
+
     const sessRes = await query(
       `INSERT INTO upload_sessions (endpoint_id, user_id, mode, source_type, status, total_files, processed_files, failed_files)
        VALUES ($1, $2, 'add_replace', 'manual', 'completed', 1, 1, 0)
@@ -305,6 +320,29 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     if (commitNow) {
       await handleSealAndBuildRelease({ sessionId });
+      
+      // Record history entry
+      const action = existingFile ? 'edit' : 'create';
+      await query(
+        `INSERT INTO file_history (
+           endpoint_id, user_id, action, relative_path,
+           previous_sha256, previous_sha1, previous_size,
+           new_sha256, new_sha1, new_size
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          endpointId,
+          req.user!.userId,
+          action,
+          sanitizedPath,
+          existingFile?.sha256 || null,
+          existingFile?.sha1 || null,
+          existingFile ? Number(existingFile.size_bytes) : 0,
+          sha256,
+          sha1,
+          buf.length
+        ]
+      );
+
       await recordAuditLog(req.user!.userId, 'edit_file', 'endpoint', endpointId, {
         path: sanitizedPath,
         sha1,
@@ -322,6 +360,125 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     }, req.ip);
 
     return reply.send({ success: true, message: 'Fichier enregistré en brouillon (session ' + sessionId + ')' });
+  });
+
+  // Batch Upload from Drag & Drop or File Selector
+  fastify.post('/endpoints/:id/explorer/upload-batch', {
+    preHandler: [requireRole(['admin', 'operator'])]
+  }, async (req, reply) => {
+    const { id: endpointId } = req.params as { id: string };
+    const schema = z.object({
+      files: z.array(z.object({
+        path: z.string().min(1),
+        contentBase64: z.string().optional(),
+        contentText: z.string().optional()
+      })).min(1)
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message });
+    }
+
+    const { files } = parsed.data;
+
+    const epRes = await query('SELECT * FROM endpoints WHERE id = $1', [endpointId]);
+    if (epRes.rows.length === 0) {
+      return reply.status(404).send({ error: 'Endpoint introuvable' });
+    }
+
+    // Get active release files map for history tracking
+    const activeRelRes = await query(
+      'SELECT id FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1',
+      [endpointId]
+    );
+    const existingMap = new Map<string, { sha256: string; sha1: string; size: number }>();
+    if (activeRelRes.rows.length > 0) {
+      const existingFiles = await query(
+        'SELECT relative_path, sha256, sha1, size_bytes FROM release_files WHERE release_id = $1',
+        [activeRelRes.rows[0].id]
+      );
+      for (const ef of existingFiles.rows) {
+        existingMap.set(ef.relative_path, {
+          sha256: ef.sha256,
+          sha1: ef.sha1,
+          size: Number(ef.size_bytes)
+        });
+      }
+    }
+
+    const sessRes = await query(
+      `INSERT INTO upload_sessions (endpoint_id, user_id, mode, source_type, status, total_files, processed_files, failed_files)
+       VALUES ($1, $2, 'add_replace', 'manual', 'completed', $3, $3, 0)
+       RETURNING id`,
+      [endpointId, req.user!.userId, files.length]
+    );
+    const sessionId = sessRes.rows[0].id;
+    const sessionStaging = path.join(STAGING_DIR, sessionId);
+    fs.mkdirSync(sessionStaging, { recursive: true, mode: 0o750 });
+
+    for (const f of files) {
+      let sanitizedPath: string;
+      try {
+        sanitizedPath = assertSanitizedRelativePath(f.path);
+      } catch (err: any) {
+        continue;
+      }
+
+      let buf: Buffer;
+      if (f.contentBase64) {
+        const raw = f.contentBase64.includes(',') ? f.contentBase64.split(',')[1] : f.contentBase64;
+        buf = Buffer.from(raw, 'base64');
+      } else {
+        buf = Buffer.from(f.contentText || '', 'utf8');
+      }
+
+      const { sha1, sha256 } = hashBuffer(buf);
+      await storeBufferInCas(buf, sha256, sha1);
+
+      const stagedFile = path.join(sessionStaging, sanitizedPath);
+      fs.mkdirSync(path.dirname(stagedFile), { recursive: true, mode: 0o750 });
+      fs.writeFileSync(stagedFile, buf);
+
+      await query(
+        `INSERT INTO upload_files (session_id, relative_path, staging_path, size_bytes, received_size, sha256, sha1, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'verified')`,
+        [sessionId, sanitizedPath, stagedFile, buf.length, buf.length, sha256, sha1]
+      );
+
+      const existing = existingMap.get(sanitizedPath);
+      await query(
+        `INSERT INTO file_history (
+           endpoint_id, user_id, action, relative_path,
+           previous_sha256, previous_sha1, previous_size,
+           new_sha256, new_sha1, new_size
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          endpointId,
+          req.user!.userId,
+          existing ? 'edit' : 'create',
+          sanitizedPath,
+          existing?.sha256 || null,
+          existing?.sha1 || null,
+          existing?.size || 0,
+          sha256,
+          sha1,
+          buf.length
+        ]
+      );
+    }
+
+    await handleSealAndBuildRelease({ sessionId });
+
+    await recordAuditLog(req.user!.userId, 'upload_batch', 'endpoint', endpointId, {
+      fileCount: files.length
+    }, req.ip);
+
+    return reply.send({
+      success: true,
+      count: files.length,
+      message: `${files.length} fichier(s) téléversé(s) et nouvelle version publiée avec succès`
+    });
   });
 
   // Delete file or directory from active release
@@ -362,6 +519,8 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       [activeRelease.id]
     );
 
+    const deletedFile = filesRes.rows.find(f => f.relative_path === targetPath);
+
     const remainingFiles = filesRes.rows.filter(f => {
       if (f.relative_path === targetPath) return false;
       if (isExplicitDir && f.relative_path.startsWith(targetPath)) return false;
@@ -392,11 +551,169 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     await handleSealAndBuildRelease({ sessionId });
 
+    if (deletedFile) {
+      await query(
+        `INSERT INTO file_history (
+           endpoint_id, user_id, action, relative_path,
+           previous_sha256, previous_sha1, previous_size,
+           new_sha256, new_sha1, new_size
+         ) VALUES ($1, $2, 'delete', $3, $4, $5, $6, NULL, NULL, 0)`,
+        [
+          endpointId,
+          req.user!.userId,
+          targetPath,
+          deletedFile.sha256,
+          deletedFile.sha1,
+          Number(deletedFile.size_bytes)
+        ]
+      );
+    }
+
     await recordAuditLog(req.user!.userId, 'delete_file', 'endpoint', endpointId, {
       path: targetPath,
       remainingCount: remainingFiles.length
     }, req.ip);
 
     return reply.send({ success: true, message: 'Élément supprimé et nouvelle version publiée' });
+  });
+
+  // Get File History for this endpoint
+  fastify.get('/endpoints/:id/explorer/history', async (req, reply) => {
+    const { id: endpointId } = req.params as { id: string };
+    const { limit = 50 } = req.query as { limit?: number };
+
+    const res = await query(
+      `SELECT h.*, u.username as user_name
+       FROM file_history h
+       LEFT JOIN users u ON u.id = h.user_id
+       WHERE h.endpoint_id = $1
+       ORDER BY h.created_at DESC
+       LIMIT $2`,
+      [endpointId, limit]
+    );
+
+    return reply.send({ history: res.rows });
+  });
+
+  // Undo a specific file change
+  fastify.post('/endpoints/:id/explorer/undo/:historyId', {
+    preHandler: [requireRole(['admin', 'operator'])]
+  }, async (req, reply) => {
+    const { id: endpointId, historyId } = req.params as { id: string; historyId: string };
+
+    const histRes = await query(
+      `SELECT * FROM file_history WHERE id = $1 AND endpoint_id = $2`,
+      [historyId, endpointId]
+    );
+
+    if (histRes.rows.length === 0) {
+      return reply.status(404).send({ error: 'Entrée d’historique introuvable' });
+    }
+
+    const record = histRes.rows[0];
+
+    const activeRelRes = await query(
+      `SELECT id FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1`,
+      [endpointId]
+    );
+
+    if (activeRelRes.rows.length === 0) {
+      return reply.status(404).send({ error: 'Aucune version active trouvée' });
+    }
+
+    const activeReleaseId = activeRelRes.rows[0].id;
+    const existingFilesRes = await query(
+      `SELECT relative_path, sha256, sha1, size_bytes, is_dir FROM release_files WHERE release_id = $1`,
+      [activeReleaseId]
+    );
+
+    const fileMap = new Map<string, { sha256: string; sha1: string; size: number; isDir: boolean }>();
+    for (const f of existingFilesRes.rows) {
+      fileMap.set(f.relative_path, {
+        sha256: f.sha256,
+        sha1: f.sha1,
+        size: Number(f.size_bytes),
+        isDir: f.is_dir
+      });
+    }
+
+    if (record.action === 'create') {
+      // Created file -> to undo, remove it
+      fileMap.delete(record.relative_path);
+    } else if (record.action === 'edit') {
+      // Edited file -> to undo, restore previous hash
+      if (!record.previous_sha256) {
+        fileMap.delete(record.relative_path);
+      } else {
+        fileMap.set(record.relative_path, {
+          sha256: record.previous_sha256,
+          sha1: record.previous_sha1,
+          size: Number(record.previous_size),
+          isDir: false
+        });
+      }
+    } else if (record.action === 'delete') {
+      // Deleted file -> to undo, restore it
+      if (record.previous_sha256) {
+        fileMap.set(record.relative_path, {
+          sha256: record.previous_sha256,
+          sha1: record.previous_sha1,
+          size: Number(record.previous_size),
+          isDir: false
+        });
+      }
+    } else if (record.action === 'undo') {
+      return reply.status(400).send({ error: 'Impossible d’annuler une annulation' });
+    }
+
+    const sessRes = await query(
+      `INSERT INTO upload_sessions (endpoint_id, user_id, mode, source_type, status, total_files, processed_files, failed_files)
+       VALUES ($1, $2, 'full_replace', 'manual', 'completed', $3, $3, 0)
+       RETURNING id`,
+      [endpointId, req.user!.userId, fileMap.size]
+    );
+    const sessionId = sessRes.rows[0].id;
+    const sessionStaging = path.join(STAGING_DIR, sessionId);
+    fs.mkdirSync(sessionStaging, { recursive: true, mode: 0o750 });
+
+    for (const [relPath, f] of fileMap.entries()) {
+      await query(
+        `INSERT INTO upload_files (session_id, relative_path, staging_path, size_bytes, received_size, sha256, sha1, status)
+         VALUES ($1, $2, '', $3, $3, $4, $5, 'verified')`,
+        [sessionId, relPath, f.size, f.sha256, f.sha1]
+      );
+    }
+
+    await handleSealAndBuildRelease({ sessionId });
+
+    await query(
+      `INSERT INTO file_history (
+         endpoint_id, user_id, action, relative_path,
+         previous_sha256, previous_sha1, previous_size,
+         new_sha256, new_sha1, new_size, details
+       ) VALUES ($1, $2, 'undo', $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        endpointId,
+        req.user!.userId,
+        record.relative_path,
+        record.new_sha256,
+        record.new_sha1,
+        record.new_size,
+        record.previous_sha256,
+        record.previous_sha1,
+        record.previous_size,
+        JSON.stringify({ undoneHistoryId: historyId, originalAction: record.action })
+      ]
+    );
+
+    await recordAuditLog(req.user!.userId, 'undo_file_change', 'file_history', historyId, {
+      path: record.relative_path,
+      originalAction: record.action
+    }, req.ip);
+
+    return reply.send({
+      success: true,
+      message: `Modification annulée pour "${record.relative_path}". Nouvelle version publiée avec succès.`
+    });
   });
 }

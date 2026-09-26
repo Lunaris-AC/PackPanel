@@ -113,3 +113,22 @@ export interface AuditLogItem {
   ip_address?: string;
   created_at: string;
 }
+
+export interface FileHistoryItem {
+  id: string;
+  endpoint_id: string;
+  release_id?: string | null;
+  user_id?: string | null;
+  user_name?: string | null;
+  action: 'create' | 'edit' | 'delete' | 'undo';
+  relative_path: string;
+  previous_sha256?: string | null;
+  previous_sha1?: string | null;
+  previous_size?: number;
+  new_sha256?: string | null;
+  new_sha1?: string | null;
+  new_size?: number;
+  details?: any;
+  created_at: string;
+}
+
