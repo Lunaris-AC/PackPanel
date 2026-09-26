@@ -12,7 +12,9 @@ import {
   X,
   Languages,
   Sparkles,
-  Shield
+  Shield,
+  Box,
+  Monitor
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -62,6 +64,8 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
 
   const navItems = [
     { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
+    { id: 'instances', label: language === 'fr' ? 'Instances Minecraft' : 'Minecraft Instances', icon: Box },
+    { id: 'launchers', label: language === 'fr' ? 'Launchers' : 'Launchers', icon: Monitor },
     { id: 'endpoints', label: t('nav.endpoints'), icon: Server },
     { id: 'jobs', label: t('nav.jobs'), icon: Activity },
     ...(user?.role === 'admin'

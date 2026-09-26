@@ -5,6 +5,8 @@ import { Layout } from './components/Layout';
 import { DashboardPage } from './pages/DashboardPage';
 import { EndpointsPage } from './pages/EndpointsPage';
 import { EndpointDetailPage } from './pages/EndpointDetailPage';
+import { InstancesPage } from './pages/InstancesPage';
+import { LaunchersPage } from './pages/LaunchersPage';
 import { JobsPage } from './pages/JobsPage';
 import { UsersPage } from './pages/UsersPage';
 
@@ -34,6 +36,8 @@ export const AppContent: React.FC = () => {
   return (
     <Layout currentTab={currentTab} onNavigate={handleNavigate}>
       {currentTab === 'dashboard' && <DashboardPage onNavigate={handleNavigate} />}
+      {currentTab === 'instances' && <InstancesPage onNavigate={handleNavigate} />}
+      {currentTab === 'launchers' && <LaunchersPage onNavigate={handleNavigate} />}
       {currentTab === 'endpoints' && <EndpointsPage onNavigate={handleNavigate} />}
       {currentTab.startsWith('endpoint:') && (
         <EndpointDetailPage
