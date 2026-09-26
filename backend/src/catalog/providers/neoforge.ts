@@ -32,6 +32,14 @@ export async function fetchAllNeoForgeVersions(): Promise<string[]> {
           versions.push(match[1]);
         }
         return versions;
+      } catch (err) {
+        return [
+          '21.1.252', '21.1.0',
+          '20.6.119', '20.6.0',
+          '20.4.237', '20.4.0',
+          '20.2.88', '20.2.0',
+          '20.1.100', '20.1.0'
+        ];
       } finally {
         clearTimeout(timer);
       }

@@ -405,7 +405,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         fs.mkdirSync(staging, { recursive: true, mode: 0o750 });
       }
 
-      await handleSealAndBuildRelease({ sessionId });
+      await handleSealAndBuildRelease({ sessionId, immediatePublish: true });
       await writeV2ManifestToEndpoint(inst.id);
 
       await recordAuditLog(req.user!.userId, 'publish', 'instance', inst.id, { slug: inst.slug }, req.ip);

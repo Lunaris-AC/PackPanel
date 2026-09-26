@@ -9,6 +9,7 @@ import { writeV2ManifestToEndpoint } from '../../api/routes/instances';
 
 export interface SealAndBuildReleasePayload {
   sessionId: string;
+  immediatePublish?: boolean;
 }
 
 export interface PublishReleasePayload {
@@ -16,8 +17,16 @@ export interface PublishReleasePayload {
   endpointId: string;
 }
 
-export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayload): Promise<void> {
-  const { sessionId } = payload;
+export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayload): Promise<{
+  releaseIdStr: string;
+  nextVersionNum: number;
+  createdReleaseId: string;
+  endpointId: string;
+  endpointSlug: string;
+  manifestJson: string;
+  releaseDir: string;
+}> {
+  const { sessionId, immediatePublish } = payload;
 
   const sessionRes = await query(
     `SELECT s.*, e.slug as endpoint_slug, e.cleanup_rules, e.auto_publish
@@ -195,8 +204,8 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
     };
   });
 
-  // Only publish immediately if auto_publish is enabled on the endpoint
-  if (shouldAutoPublish) {
+  const shouldPublish = Boolean(immediatePublish || shouldAutoPublish);
+  if (shouldPublish) {
     await publishReleaseInternal(endpointId, createdReleaseId, endpointSlug, manifestJson, releaseDir);
   }
 
@@ -205,6 +214,16 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
     `UPDATE upload_sessions SET status = 'completed', updated_at = NOW() WHERE id = $1`,
     [sessionId]
   );
+
+  return {
+    releaseIdStr,
+    nextVersionNum,
+    createdReleaseId,
+    endpointId,
+    endpointSlug,
+    manifestJson,
+    releaseDir
+  };
 }
 
 /**
