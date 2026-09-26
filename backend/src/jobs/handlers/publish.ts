@@ -5,6 +5,7 @@ import { query, withTransaction } from '../../db';
 import { config, ENDPOINTS_DIR } from '../../config';
 import { linkObjectToRelease } from '../../storage/cas';
 import { buildMineLaunchedManifest, validateMineLaunchedContract, FileRecordInput } from '../../storage/manifest';
+import { writeV2ManifestToEndpoint } from '../../api/routes/instances';
 
 export interface SealAndBuildReleasePayload {
   sessionId: string;
@@ -285,4 +286,14 @@ export async function publishReleaseInternal(
       [releaseDbId]
     );
   });
+
+  // 4. Update V2 manifest packpanel.json if an instance is linked to this endpoint
+  try {
+    const instRes = await query('SELECT id FROM instances WHERE endpoint_id = $1', [endpointId]);
+    for (const inst of instRes.rows) {
+      await writeV2ManifestToEndpoint(inst.id);
+    }
+  } catch (err) {
+    // Non-blocking for endpoints without instances
+  }
 }

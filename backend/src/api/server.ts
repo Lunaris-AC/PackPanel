@@ -12,6 +12,8 @@ import { versionRoutes } from './routes/versions';
 import { jobRoutes } from './routes/jobs';
 import { statsRoutes } from './routes/stats';
 import { userRoutes } from './routes/users';
+import { instanceRoutes } from './routes/instances';
+import { launcherRoutes } from './routes/launchers';
 
 import { authenticateRequest, enforceOriginCheck, isAllowedOrigin } from '../auth/middleware';
 
@@ -87,6 +89,8 @@ async function main() {
   await server.register(jobRoutes, { prefix: '/api' });
   await server.register(statsRoutes, { prefix: '/api' });
   await server.register(userRoutes, { prefix: '/api' });
+  await server.register(instanceRoutes, { prefix: '/api/v2' });
+  await server.register(launcherRoutes, { prefix: '/api/v2' });
 
   // Custom global error handler
   server.setErrorHandler((error, request, reply) => {

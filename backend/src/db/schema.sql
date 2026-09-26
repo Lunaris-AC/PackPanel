@@ -209,3 +209,75 @@ CREATE TABLE IF NOT EXISTS file_history (
 );
 CREATE INDEX IF NOT EXISTS idx_file_history_endpoint ON file_history(endpoint_id, created_at DESC);
 
+-- Minecraft Instances (PackPanel V2)
+CREATE TABLE IF NOT EXISTS instances (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    endpoint_id UUID REFERENCES endpoints(id) ON DELETE SET NULL,
+    name VARCHAR(128) NOT NULL,
+    slug VARCHAR(64) UNIQUE NOT NULL,
+    description TEXT DEFAULT '',
+    icon_url TEXT,
+    minecraft_version VARCHAR(32) NOT NULL,
+    loader_type VARCHAR(20) NOT NULL CHECK (loader_type IN ('vanilla', 'forge', 'neoforge', 'fabric', 'quilt')),
+    loader_version VARCHAR(64),
+    java_version INT NOT NULL DEFAULT 17,
+    java_args TEXT DEFAULT '-Xms2G -Xmx4G',
+    server_address VARCHAR(255),
+    server_name VARCHAR(128),
+    file_policies JSONB NOT NULL DEFAULT '{"protected_paths": ["saves/", "screenshots/", "options.txt", "optionsof.txt", "usercache.json"], "optional_mods": []}'::jsonb,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_instances_slug ON instances(slug);
+CREATE INDEX IF NOT EXISTS idx_instances_endpoint ON instances(endpoint_id);
+
+-- Custom Launcher Projects
+CREATE TABLE IF NOT EXISTS launcher_projects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(128) NOT NULL,
+    slug VARCHAR(64) UNIQUE NOT NULL,
+    title VARCHAR(128) NOT NULL,
+    template VARCHAR(32) NOT NULL DEFAULT 'minimal' CHECK (template IN ('minimal', 'community', 'network')),
+    accent_color VARCHAR(16) NOT NULL DEFAULT '#6366f1',
+    background_url TEXT,
+    logo_url TEXT,
+    icon_url TEXT,
+    auth_microsoft BOOLEAN NOT NULL DEFAULT TRUE,
+    auth_offline BOOLEAN NOT NULL DEFAULT TRUE,
+    discord_url TEXT,
+    website_url TEXT,
+    distribution_fqdn VARCHAR(255),
+    created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_launcher_projects_slug ON launcher_projects(slug);
+
+-- Launcher Project Instance Associations
+CREATE TABLE IF NOT EXISTS launcher_project_instances (
+    launcher_project_id UUID NOT NULL REFERENCES launcher_projects(id) ON DELETE CASCADE,
+    instance_id UUID NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (launcher_project_id, instance_id)
+);
+
+-- Launcher Builds
+CREATE TABLE IF NOT EXISTS launcher_builds (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    launcher_project_id UUID NOT NULL REFERENCES launcher_projects(id) ON DELETE CASCADE,
+    version VARCHAR(32) NOT NULL,
+    target_os VARCHAR(20) NOT NULL CHECK (target_os IN ('windows', 'linux', 'macos', 'all')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'building', 'completed', 'failed')),
+    artifact_path TEXT,
+    artifact_size BIGINT DEFAULT 0,
+    artifact_sha256 VARCHAR(64),
+    logs TEXT,
+    error_message TEXT,
+    created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_launcher_builds_project ON launcher_builds(launcher_project_id, created_at DESC);
+
