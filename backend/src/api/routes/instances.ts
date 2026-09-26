@@ -65,7 +65,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
              (SELECT total_bytes FROM releases WHERE endpoint_id = i.endpoint_id AND is_active = TRUE LIMIT 1) as active_total_bytes
       FROM instances i
       LEFT JOIN endpoints e ON e.id = i.endpoint_id
-      WHERE i.id = $1 OR i.slug = $1
+      WHERE i.id::text = $1 OR i.slug = $1
     `, [id]);
 
     if (res.rows.length === 0) {
@@ -247,7 +247,7 @@ export async function buildInstanceManifestV2(instanceId: string): Promise<any |
     SELECT i.*, e.slug as endpoint_slug
     FROM instances i
     LEFT JOIN endpoints e ON e.id = i.endpoint_id
-    WHERE i.id = $1 OR i.slug = $1
+    WHERE i.id::text = $1 OR i.slug = $1
   `, [instanceId]);
 
   if (instRes.rows.length === 0) return null;

@@ -44,7 +44,7 @@ export async function launcherRoutes(fastify: FastifyInstance) {
   // 2. Get single launcher project with linked instances
   fastify.get('/launchers/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await query('SELECT * FROM launcher_projects WHERE id = $1 OR slug = $1', [id]);
+    const res = await query('SELECT * FROM launcher_projects WHERE id::text = $1 OR slug = $1', [id]);
     if (res.rows.length === 0) {
       return reply.status(404).send({ error: 'Projet de launcher introuvable' });
     }
@@ -226,7 +226,7 @@ export async function launcherRoutes(fastify: FastifyInstance) {
   // 6. Get launcher client configuration JSON
   fastify.get('/launchers/:id/config', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await query('SELECT * FROM launcher_projects WHERE id = $1 OR slug = $1', [id]);
+    const res = await query('SELECT * FROM launcher_projects WHERE id::text = $1 OR slug = $1', [id]);
     if (res.rows.length === 0) {
       return reply.status(404).send({ error: 'Projet introuvable' });
     }
