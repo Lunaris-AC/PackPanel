@@ -3,5 +3,7 @@ dist/
 .env
 *.tar.gz
 *.log
+patch*.sql
+original_prompt.txt
 .DS_Store
 Thumbs.db
