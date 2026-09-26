@@ -7,7 +7,7 @@ import { useToast } from './Toast';
 interface SetupWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: () => void;
+  onComplete: (createdSlug?: string) => void;
 }
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onComplete }) => {
@@ -47,6 +47,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
 
   const handleFinish = async () => {
     setSubmitting(true);
+    let createdSlug = '';
     try {
       // 1. Change password if provided
       if (newPassword) {
@@ -57,17 +58,18 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
 
       // 2. Create endpoint if requested
       if (modpackName.trim() && modpackSlug.trim()) {
-        await api.post('/endpoints', {
+        const res = await api.post<{ endpoint: { slug: string } }>('/endpoints', {
           name: modpackName.trim(),
           slug: modpackSlug.trim().toLowerCase(),
           cleanup_rules: ['mods']
         });
+        createdSlug = res?.endpoint?.slug || modpackSlug.trim().toLowerCase();
       }
 
       localStorage.setItem('packpanel_setup_completed', 'true');
       toast.success(t('setup.done_title'));
-      onComplete();
       onClose();
+      onComplete(createdSlug);
     } catch (err: any) {
       toast.error(err.message || t('common.error'));
     } finally {

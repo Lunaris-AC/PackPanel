@@ -125,4 +125,32 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     return reply.send({ success: true, message: 'Mot de passe mis à jour avec succès' });
   });
+
+  // Change password without requiring current password (for Setup Wizard / authenticated onboarding)
+  fastify.post('/change-password', { preHandler: [authenticateRequest] }, async (req, reply) => {
+    const bodySchema = z.object({
+      newPassword: z.string().min(10, 'Le mot de passe doit contenir au moins 10 caractères'),
+    });
+
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message });
+    }
+
+    const { newPassword } = parsed.data;
+    if (!(/[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword) && /[0-9]/.test(newPassword))) {
+      return reply.status(400).send({
+        error: 'Le mot de passe doit comporter au moins 1 majuscule, 1 minuscule et 1 chiffre.'
+      });
+    }
+
+    const newHash = await hashPassword(newPassword);
+    await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, req.user!.userId]);
+    // Revoke previous sessions on other devices
+    await query('DELETE FROM sessions WHERE user_id = $1 AND id != $2', [req.user!.userId, req.user!.sessionId]);
+    await recordAuditLog(req.user!.userId, 'password_change', 'user', req.user!.userId, { source: 'setup_wizard' }, req.ip);
+
+    return reply.send({ success: true, message: 'Mot de passe mis à jour avec succès' });
+  });
 }
+

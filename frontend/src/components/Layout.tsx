@@ -236,7 +236,13 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
       <SetupWizard
         isOpen={setupWizardOpen}
         onClose={() => setSetupWizardOpen(false)}
-        onComplete={() => {}}
+        onComplete={(slug) => {
+          if (slug) {
+            onNavigate('endpoints');
+          } else {
+            window.location.reload();
+          }
+        }}
       />
     </div>
   );

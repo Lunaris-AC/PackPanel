@@ -28,7 +28,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgres://${POSTGRES_USER:-packpanel}:${POSTGRES_PASSWORD:-packpanel_secret_pass_123}@postgres:5432/${POSTGRES_DB:-packpanel}
       ADMIN_FQDN: ${ADMIN_FQDN:-panel.mccdn.internal}
-      FILES_FQDN: ${FILES_FQDN:-mccdn.internal}
+      FILES_FQDN: ${FILES_FQDN:-mccdn.inferi.fr}
       ADMIN_ORIGIN_PORT: 3000
       DATA_DIR: /srv/packpanel
       APP_DIR: /opt/packpanel
@@ -52,7 +52,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-packpanel}:${POSTGRES_PASSWORD:-packpanel_secret_pass_123}@postgres:5432/${POSTGRES_DB:-packpanel}
       ADMIN_FQDN: ${ADMIN_FQDN:-panel.mccdn.internal}
-      FILES_FQDN: ${FILES_FQDN:-mccdn.internal}
+      FILES_FQDN: ${FILES_FQDN:-mccdn.inferi.fr}
       DATA_DIR: /srv/packpanel
       APP_DIR: /opt/packpanel
     volumes:

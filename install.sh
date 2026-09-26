@@ -83,8 +83,8 @@ APP_DIR="${APP_DIR:-$DEFAULT_APP_DIR}"
 DATA_DIR="${DATA_DIR:-/srv/packpanel}"
 ADMIN_ORIGIN_PORT="${ADMIN_ORIGIN_PORT:-8080}"
 FILES_ORIGIN_PORT="${FILES_ORIGIN_PORT:-8081}"
-ADMIN_FQDN="${ADMIN_FQDN:-panel.example.com}"
-FILES_FQDN="${FILES_FQDN:-cdn.example.com}"
+ADMIN_FQDN="${ADMIN_FQDN:-panel.mccdn.internal}"
+FILES_FQDN="${FILES_FQDN:-mccdn.inferi.fr}"
 ADMIN_LOGIN="${ADMIN_LOGIN:-admin}"
 
 # Interactive prompts if running in a TTY and .env doesn't exist
@@ -122,7 +122,7 @@ ENV_FILE="${APP_DIR}/.env"
 if [ ! -f "$ENV_FILE" ]; then
   POSTGRES_PASSWORD=$(openssl rand -hex 16)
   SESSION_SECRET=$(openssl rand -hex 32)
-  ADMIN_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+  ADMIN_PASSWORD="Admin_$(openssl rand -hex 8)!"
 
   cat > "$ENV_FILE" <<EOF
 # PackPanel - Production Configuration
@@ -162,8 +162,9 @@ fi
 # 6. Build and launch Docker containers
 echo -e "${CYAN}[5/7] Building and launching Docker Compose stack...${NC}"
 
-# Compile frontend inside container if node is not on host
-docker run --rm -v "${APP_DIR}/frontend":/app -w /app node:20-bookworm-slim sh -c "npm ci && npm run build" >/dev/null 2>&1 || true
+# Compile frontend inside container
+echo -e "  Compiling frontend application..."
+docker run --rm -v "${APP_DIR}/frontend":/app -w /app node:20-bookworm-slim sh -c "npm ci && npm run build"
 
 docker compose build api worker
 docker compose up -d
