@@ -19,6 +19,11 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     ...(options.headers as Record<string, string> || {}),
   };
 
+  const storedToken = typeof window !== 'undefined' ? localStorage.getItem('packpanel_token') : null;
+  if (storedToken && !headers['Authorization']) {
+    headers['Authorization'] = `Bearer ${storedToken}`;
+  }
+
   // Only set Content-Type to application/json if body is not FormData
   if (!(options.body instanceof FormData) && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';

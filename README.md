@@ -39,20 +39,31 @@ PackPanel est une application full-stack moderne, autonome et auto-hébergée, c
 
 ---
 
-## 3. Démarrage Rapide
+## 3. Démarrage & Installation Rapide
 
 ### Prérequis
-- Docker et Docker Compose v2+
-- Ports `8080` et `8081` disponibles sur la machine hôte
+- Système Linux (Ubuntu, Debian, AlmaLinux, Rocky, Alpine, etc.)
+- Ports `8080` (Admin) et `8081` (Distribution) disponibles
+- Docker et Docker Compose (installés automatiquement par le script si absents)
 
-### Déploiement en une commande
+### Installation Automatisée en une commande
+
 ```bash
-git clone <repo> /opt/packpanel
+git clone https://github.com/<votre-organisation>/packpanel.git /opt/packpanel
 cd /opt/packpanel
-./scripts/deploy.sh
+sudo chmod +x install.sh
+sudo ./install.sh
 ```
 
-Le script configure automatiquement les répertoires `/srv/packpanel`, génère des secrets forts dans `.env`, compile les conteneurs, applique les migrations PostgreSQL, crée le compte administrateur initial et exécute les tests de conformité.
+Le script automatisé prend en charge l'intégralité du cycle de mise en service :
+1. Détection et installation automatique des dépendances (Docker, Compose, OpenSSL).
+2. Configuration guidée (ou automatique en variables d'environnement) des domaines et ports.
+3. Préparation des répertoires de stockage `/srv/packpanel` avec permissions strictes (`0750` / `0700`).
+4. Génération de mots de passe cryptographiques forts et d'un secret de session aléatoire.
+5. Compilation multi-étapes sécurisée des conteneurs applicatifs et du frontend.
+6. Initialisation du schéma PostgreSQL 16 et du compte administrateur avec hachage Argon2id.
+7. Exécution d'un test de conformité immédiat (*smoke test*) pour valider les deux listeners.
+8. Consignation sécurisée des identifiants dans `/srv/packpanel/admin_credentials.txt` (chmod 600).
 
 ---
 

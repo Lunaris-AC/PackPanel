@@ -44,6 +44,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       maxAge: 7 * 24 * 60 * 60, // 7 days
     });
 
+    await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
     await recordAuditLog(user.id, 'login', 'user', user.id, { username }, ip);
 
     return reply.send({

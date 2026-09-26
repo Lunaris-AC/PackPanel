@@ -41,7 +41,7 @@ export const UsersPage: React.FC = () => {
         setAuditLogs(res.logs);
       }
     } catch (e: any) {
-      toast.error('Erreur chargement des données');
+      toast.error(e?.message || 'Erreur chargement des données');
     } finally {
       setLoading(false);
     }

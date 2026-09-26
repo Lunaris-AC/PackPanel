@@ -36,7 +36,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (username: string, password: string) => {
-    const res = await api.post<{ user: User }>('/auth/login', { username, password });
+    const res = await api.post<{ user: User; token?: string }>('/auth/login', { username, password });
+    if (res.token) {
+      localStorage.setItem('packpanel_token', res.token);
+    }
     setUser(res.user);
   };
 
@@ -44,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await api.post('/auth/logout');
     } finally {
+      localStorage.removeItem('packpanel_token');
       setUser(null);
     }
   };
