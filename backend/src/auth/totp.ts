@@ -53,6 +53,19 @@ export function generateRecoveryCodes(count = 8): string[] {
   return codes;
 }
 
+export function hashRecoveryCode(code: string, salt: string): string {
+  const clean = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return crypto.createHmac('sha256', salt).update(clean).digest('hex');
+}
+
+export function verifyRecoveryCode(candidate: string, hashedCodes: string[], salt: string): { valid: boolean; matchingHash?: string } {
+  const candidateHash = hashRecoveryCode(candidate, salt);
+  if (hashedCodes.includes(candidateHash)) {
+    return { valid: true, matchingHash: candidateHash };
+  }
+  return { valid: false };
+}
+
 export function getOtpAuthUri(username: string, secretBase32: string, issuer = 'PackPanel'): string {
   const encodedIssuer = encodeURIComponent(issuer);
   const encodedAccount = encodeURIComponent(`${issuer}:${username}`);

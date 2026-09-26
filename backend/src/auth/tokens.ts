@@ -63,3 +63,11 @@ export async function validateSession(sessionId: string, token: string): Promise
 export async function revokeSession(sessionId: string): Promise<void> {
   await query('DELETE FROM sessions WHERE id = $1', [sessionId]);
 }
+
+export async function revokeAllUserSessionsExcept(userId: string, currentSessionId?: string): Promise<void> {
+  if (currentSessionId) {
+    await query('DELETE FROM sessions WHERE user_id = $1 AND id != $2', [userId, currentSessionId]);
+  } else {
+    await query('DELETE FROM sessions WHERE user_id = $1', [userId]);
+  }
+}

@@ -2,7 +2,7 @@ import os from 'os';
 import fs from 'fs';
 import { JobQueue } from './jobs/queue';
 import { handleProcessUploadFile } from './jobs/handlers/hash';
-import { handleSealAndBuildRelease } from './jobs/handlers/publish';
+import { handleSealAndBuildRelease, handlePublishRelease } from './jobs/handlers/publish';
 import { handleExtractZipImport } from './jobs/handlers/zip';
 import { handleGarbageCollection } from './jobs/handlers/gc';
 import { handleScanIncomingFolder } from './jobs/handlers/watch';
@@ -69,6 +69,9 @@ async function startWorker() {
             break;
           case 'seal_and_build_release':
             await handleSealAndBuildRelease(job.payload);
+            break;
+          case 'publish_release':
+            await handlePublishRelease(job.payload);
             break;
           case 'extract_zip_import':
             await handleExtractZipImport(job.payload);

@@ -13,7 +13,10 @@ import { jobRoutes } from './routes/jobs';
 import { statsRoutes } from './routes/stats';
 import { userRoutes } from './routes/users';
 
+import { authenticateRequest, enforceOriginCheck, isAllowedOrigin } from '../auth/middleware';
+
 const server = Fastify({
+  trustProxy: true,
   logger: {
     level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   },
@@ -23,7 +26,12 @@ const server = Fastify({
 async function main() {
   // 1. Core plugins
   await server.register(cors, {
-    origin: true,
+    origin: (origin, cb) => {
+      if (!origin || isAllowedOrigin(origin)) {
+        return cb(null, true);
+      }
+      return cb(new Error('Origine non autorisée par la politique CORS'), false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Tus-Resumable', 'Upload-Length', 'Upload-Metadata', 'Upload-Offset', 'X-Requested-With'],
@@ -42,6 +50,9 @@ async function main() {
     }
   });
 
+  // Global CSRF / Origin enforcement on state-modifying requests
+  server.addHook('preHandler', enforceOriginCheck);
+
   // 2. Healthcheck
   server.get('/api/health', async (req, reply) => {
     return reply.send({
@@ -51,21 +62,21 @@ async function main() {
     });
   });
 
-  // 3. Server-Sent Events (SSE) stream for live updates
-  server.get('/api/events', async (req, reply) => {
+  // 3. Server-Sent Events (SSE) stream for live updates (authenticated)
+  server.get('/api/events', {
+    preHandler: [authenticateRequest]
+  }, async (req, reply) => {
     return sseManager.addClient(req, reply);
   });
 
-  // 4. TUS Resumable Upload Handlers
-  server.all('/api/uploads/tus', async (req, reply) => {
+  // 4. TUS Resumable Upload Handlers (authenticated)
+  const handleTus = async (req: any, reply: any) => {
     reply.hijack();
     tusServer.handle(req.raw, reply.raw);
-  });
+  };
 
-  server.all('/api/uploads/tus/*', async (req, reply) => {
-    reply.hijack();
-    tusServer.handle(req.raw, reply.raw);
-  });
+  server.all('/api/uploads/tus', { preHandler: [authenticateRequest] }, handleTus);
+  server.all('/api/uploads/tus/*', { preHandler: [authenticateRequest] }, handleTus);
 
   // 5. Register modular API routes
   await server.register(authRoutes, { prefix: '/api/auth' });

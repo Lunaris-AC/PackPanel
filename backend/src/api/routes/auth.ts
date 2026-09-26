@@ -2,9 +2,16 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query } from '../../db';
 import { verifyPassword, hashPassword } from '../../auth/argon2';
-import { createSession, revokeSession, SESSION_COOKIE_NAME } from '../../auth/tokens';
+import { createSession, revokeSession, revokeAllUserSessionsExcept, SESSION_COOKIE_NAME } from '../../auth/tokens';
 import { authenticateRequest, recordAuditLog } from '../../auth/middleware';
-import { generateTotpSecret, generateRecoveryCodes, getOtpAuthUri, verifyTOTP } from '../../auth/totp';
+import {
+  generateTotpSecret,
+  generateRecoveryCodes,
+  getOtpAuthUri,
+  verifyTOTP,
+  hashRecoveryCode,
+  verifyRecoveryCode
+} from '../../auth/totp';
 
 interface LoginRateLimit {
   attempts: number;
@@ -71,15 +78,19 @@ export async function authRoutes(fastify: FastifyInstance) {
       let isRecoveryCode = false;
 
       if (!validTotp && user.totp_recovery_codes && Array.isArray(user.totp_recovery_codes)) {
-        const cleanInput = totpCode.trim().toUpperCase();
-        if (user.totp_recovery_codes.includes(cleanInput)) {
+        const result = verifyRecoveryCode(totpCode, user.totp_recovery_codes, user.id);
+        if (result.valid && result.matchingHash) {
           isRecoveryCode = true;
-          const remaining = user.totp_recovery_codes.filter((c: string) => c !== cleanInput);
+          const remaining = user.totp_recovery_codes.filter((c: string) => c !== result.matchingHash);
           await query('UPDATE users SET totp_recovery_codes = $1 WHERE id = $2', [remaining, user.id]);
         }
       }
 
       if (!validTotp && !isRecoveryCode) {
+        const current = loginRateLimitMap.get(ip) || { attempts: 0, blockedUntil: 0 };
+        current.attempts += 1;
+        if (current.attempts >= 5) current.blockedUntil = now + 5 * 60 * 1000;
+        loginRateLimitMap.set(ip, current);
         return reply.status(401).send({ error: 'Code 2FA invalide ou expiré' });
       }
     }
@@ -143,13 +154,14 @@ export async function authRoutes(fastify: FastifyInstance) {
   const handle2faSetup = async (req: any, reply: any) => {
     const secret = generateTotpSecret();
     const recoveryCodes = generateRecoveryCodes(8);
+    const hashedCodes = recoveryCodes.map(c => hashRecoveryCode(c, req.user!.userId));
     const otpauthUri = getOtpAuthUri(req.user!.username, secret);
 
     await query(
       `UPDATE users
        SET totp_secret = $1, totp_recovery_codes = $2
        WHERE id = $3`,
-      [secret, recoveryCodes, req.user!.userId]
+      [secret, hashedCodes, req.user!.userId]
     );
 
     return reply.send({
@@ -218,35 +230,10 @@ export async function authRoutes(fastify: FastifyInstance) {
     return reply.send({ success: true, message: 'Double authentification (2FA) désactivée' });
   });
 
-  // Update password
+  // Update password (requires current password and revokes all other sessions)
   fastify.put('/password', { preHandler: [authenticateRequest] }, async (req, reply) => {
     const bodySchema = z.object({
       currentPassword: z.string().min(1),
-      newPassword: z.string().min(8, 'Le mot de passe doit contenir au moins 8 caractères'),
-    });
-
-    const parsed = bodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.issues[0].message });
-    }
-
-    const { currentPassword, newPassword } = parsed.data;
-    const userRes = await query('SELECT password_hash FROM users WHERE id = $1', [req.user!.userId]);
-    const valid = await verifyPassword(userRes.rows[0].password_hash, currentPassword);
-    if (!valid) {
-      return reply.status(400).send({ error: 'Mot de passe actuel incorrect' });
-    }
-
-    const newHash = await hashPassword(newPassword);
-    await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, req.user!.userId]);
-    await recordAuditLog(req.user!.userId, 'password_change', 'user', req.user!.userId, {}, req.ip);
-
-    return reply.send({ success: true, message: 'Mot de passe mis à jour avec succès' });
-  });
-
-  // Change password without requiring current password (for Setup Wizard / authenticated onboarding)
-  fastify.post('/change-password', { preHandler: [authenticateRequest] }, async (req, reply) => {
-    const bodySchema = z.object({
       newPassword: z.string().min(10, 'Le mot de passe doit contenir au moins 10 caractères'),
     });
 
@@ -255,18 +242,23 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.issues[0].message });
     }
 
-    const { newPassword } = parsed.data;
+    const { currentPassword, newPassword } = parsed.data;
     if (!(/[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword) && /[0-9]/.test(newPassword))) {
       return reply.status(400).send({
         error: 'Le mot de passe doit comporter au moins 1 majuscule, 1 minuscule et 1 chiffre.'
       });
     }
 
+    const userRes = await query('SELECT password_hash FROM users WHERE id = $1', [req.user!.userId]);
+    const valid = await verifyPassword(userRes.rows[0].password_hash, currentPassword);
+    if (!valid) {
+      return reply.status(400).send({ error: 'Mot de passe actuel incorrect' });
+    }
+
     const newHash = await hashPassword(newPassword);
     await query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, req.user!.userId]);
-    // Revoke previous sessions on other devices
-    await query('DELETE FROM sessions WHERE user_id = $1 AND id != $2', [req.user!.userId, req.user!.sessionId]);
-    await recordAuditLog(req.user!.userId, 'password_change', 'user', req.user!.userId, { source: 'setup_wizard' }, req.ip);
+    await revokeAllUserSessionsExcept(req.user!.userId, req.user!.sessionId);
+    await recordAuditLog(req.user!.userId, 'password_change', 'user', req.user!.userId, {}, req.ip);
 
     return reply.send({ success: true, message: 'Mot de passe mis à jour avec succès' });
   });
