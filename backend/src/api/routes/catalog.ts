@@ -48,9 +48,10 @@ export async function catalogRoutes(fastify: FastifyInstance) {
 
   // 2. Get available loaders for a given Minecraft version
   fastify.get('/catalog/loaders', async (req, reply) => {
-    const { minecraftVersion } = req.query as { minecraftVersion?: string };
+    const q = req.query as any;
+    const minecraftVersion = q.minecraftVersion || q.mcVersion;
     if (!minecraftVersion) {
-      return reply.status(400).send({ error: 'Le paramètre minecraftVersion est requis' });
+      return reply.status(400).send({ error: 'Le paramètre minecraftVersion (ou mcVersion) est requis' });
     }
 
     try {
@@ -65,10 +66,9 @@ export async function catalogRoutes(fastify: FastifyInstance) {
 
   // 3. Get exact loader versions for a loader & Minecraft version
   fastify.get('/catalog/loader-versions', async (req, reply) => {
-    const { loader, minecraftVersion } = req.query as {
-      loader?: LoaderType;
-      minecraftVersion?: string;
-    };
+    const q = req.query as any;
+    const loader = q.loader as LoaderType;
+    const minecraftVersion = q.minecraftVersion || q.mcVersion;
 
     if (!loader || !minecraftVersion) {
       return reply.status(400).send({ error: 'Les paramètres loader et minecraftVersion sont requis' });
@@ -86,11 +86,10 @@ export async function catalogRoutes(fastify: FastifyInstance) {
 
   // 4. Resolve Java requirements and default arguments
   fastify.get('/catalog/requirements', async (req, reply) => {
-    const { minecraftVersion, loader = 'vanilla', loaderVersion } = req.query as {
-      minecraftVersion?: string;
-      loader?: LoaderType;
-      loaderVersion?: string;
-    };
+    const q = req.query as any;
+    const minecraftVersion = q.minecraftVersion || q.mcVersion;
+    const loader = (q.loader || 'vanilla') as LoaderType;
+    const loaderVersion = q.loaderVersion;
 
     if (!minecraftVersion) {
       return reply.status(400).send({ error: 'Le paramètre minecraftVersion est requis' });
