@@ -73,7 +73,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
   const loadInstances = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/api/v2/instances');
+      const res = await api.get('/v2/instances');
       setInstances(res.instances || []);
     } catch (err: any) {
       toast.error('Erreur lors du chargement des instances: ' + (err.message || ''));
@@ -154,10 +154,10 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
     e.preventDefault();
     try {
       if (editingInstance) {
-        await api.put(`/api/v2/instances/${editingInstance.id}`, formData);
+        await api.put(`/v2/instances/${editingInstance.id}`, formData);
         toast.success('Instance mise à jour avec succès');
       } else {
-        await api.post('/api/v2/instances', formData);
+        await api.post('/v2/instances', formData);
         toast.success('Instance Minecraft créée avec succès');
       }
       setModalOpen(false);
@@ -170,7 +170,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Supprimer définitivement l'instance "${name}" ?`)) return;
     try {
-      await api.delete(`/api/v2/instances/${id}`);
+      await api.delete(`/v2/instances/${id}`);
       toast.success('Instance supprimée');
       loadInstances();
     } catch (err: any) {

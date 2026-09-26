@@ -76,8 +76,8 @@ export const LaunchersPage: React.FC<LaunchersPageProps> = () => {
     try {
       setLoading(true);
       const [launchersRes, instancesRes] = await Promise.all([
-        api.get('/api/v2/launchers'),
-        api.get('/api/v2/instances')
+        api.get('/v2/launchers'),
+        api.get('/v2/instances')
       ]);
       setLaunchers(launchersRes.launchers || []);
       setAvailableInstances(instancesRes.instances || []);
@@ -114,7 +114,7 @@ export const LaunchersPage: React.FC<LaunchersPageProps> = () => {
   const openEditModal = async (launcher: LauncherProject) => {
     setEditingLauncher(launcher);
     try {
-      const details = await api.get(`/api/v2/launchers/${launcher.id}`);
+      const details = await api.get(`/v2/launchers/${launcher.id}`);
       const selectedInstanceIds = (details.instances || []).map((i: any) => i.id);
       setFormData({
         name: launcher.name,
@@ -155,10 +155,10 @@ export const LaunchersPage: React.FC<LaunchersPageProps> = () => {
     e.preventDefault();
     try {
       if (editingLauncher) {
-        await api.put(`/api/v2/launchers/${editingLauncher.id}`, formData);
+        await api.put(`/v2/launchers/${editingLauncher.id}`, formData);
         toast.success('Projet de launcher mis à jour');
       } else {
-        await api.post('/api/v2/launchers', formData);
+        await api.post('/v2/launchers', formData);
         toast.success('Launcher personnalisé créé avec succès');
       }
       setModalOpen(false);
@@ -171,7 +171,7 @@ export const LaunchersPage: React.FC<LaunchersPageProps> = () => {
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Supprimer le launcher "${name}" ?`)) return;
     try {
-      await api.delete(`/api/v2/launchers/${id}`);
+      await api.delete(`/v2/launchers/${id}`);
       toast.success('Launcher supprimé');
       loadData();
     } catch (err: any) {
@@ -181,7 +181,7 @@ export const LaunchersPage: React.FC<LaunchersPageProps> = () => {
 
   const downloadClientConfig = async (launcher: LauncherProject) => {
     try {
-      const config = await api.get(`/api/v2/launchers/${launcher.id}/config`);
+      const config = await api.get(`/v2/launchers/${launcher.id}/config`);
       const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

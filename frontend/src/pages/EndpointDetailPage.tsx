@@ -115,7 +115,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
               className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 mb-1"
             >
               <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-              Retour à la liste des endpoints
+              Retour
             </button>
             <div className="flex items-center space-x-3">
               <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">

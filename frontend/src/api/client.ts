@@ -13,7 +13,9 @@ export class ApiError extends Error {
 }
 
 async function request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${BASE_URL}${endpoint}`;
+  const normalized = endpoint.startsWith('/api') ? endpoint.substring(4) : endpoint;
+  const cleanEndpoint = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  const url = `${BASE_URL}${cleanEndpoint}`;
   
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string> || {}),
