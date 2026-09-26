@@ -1,0 +1,19 @@
+{
+  "name": "@packpanel/sdk",
+  "version": "2.0.0",
+  "description": "Developer SDK and client libraries for PackPanel V2 platform and launcher engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@packpanel/engine": "^2.0.0",
+    "@packpanel/protocol": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}
