@@ -153,10 +153,13 @@ export async function launcherRoutes(fastify: FastifyInstance) {
     }
 
     const data = parsed.data;
-    const existing = await query('SELECT * FROM launcher_projects WHERE id = $1', [id]);
+    const existing = await query('SELECT * FROM launcher_projects WHERE id::text = $1 OR slug = $1', [id]);
     if (existing.rows.length === 0) {
       return reply.status(404).send({ error: 'Projet de launcher introuvable' });
     }
+
+    const current = existing.rows[0];
+    const targetId = current.id;
 
     const updated = await withTransaction(async (client) => {
       const res = await client.query(
@@ -187,17 +190,17 @@ export async function launcherRoutes(fastify: FastifyInstance) {
           data.authOffline ?? null,
           data.discordUrl ?? null,
           data.websiteUrl ?? null,
-          id
+          targetId
         ]
       );
 
       if (data.instanceIds) {
-        await client.query('DELETE FROM launcher_project_instances WHERE launcher_project_id = $1', [id]);
+        await client.query('DELETE FROM launcher_project_instances WHERE launcher_project_id = $1', [targetId]);
         for (let i = 0; i < data.instanceIds.length; i++) {
           await client.query(
             `INSERT INTO launcher_project_instances (launcher_project_id, instance_id, is_default, sort_order)
              VALUES ($1, $2, $3, $4)`,
-            [id, data.instanceIds[i], i === 0, i]
+            [targetId, data.instanceIds[i], i === 0, i]
           );
         }
       }
@@ -205,7 +208,7 @@ export async function launcherRoutes(fastify: FastifyInstance) {
       return res.rows[0];
     });
 
-    await recordAuditLog(req.user!.userId, 'update', 'launcher_project', id, data, req.ip);
+    await recordAuditLog(req.user!.userId, 'update', 'launcher_project', targetId, data, req.ip);
     return reply.send({ launcher: updated });
   });
 
@@ -214,7 +217,7 @@ export async function launcherRoutes(fastify: FastifyInstance) {
     preHandler: [requireRole(['admin'])]
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await query('DELETE FROM launcher_projects WHERE id = $1 RETURNING id, slug', [id]);
+    const res = await query('DELETE FROM launcher_projects WHERE id::text = $1 OR slug = $1 RETURNING id, slug', [id]);
     if (res.rows.length === 0) {
       return reply.status(404).send({ error: 'Projet introuvable' });
     }

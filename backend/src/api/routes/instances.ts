@@ -162,12 +162,13 @@ export async function instanceRoutes(fastify: FastifyInstance) {
     }
 
     const data = parsed.data;
-    const existing = await query('SELECT * FROM instances WHERE id = $1', [id]);
+    const existing = await query('SELECT * FROM instances WHERE id::text = $1 OR slug = $1', [id]);
     if (existing.rows.length === 0) {
       return reply.status(404).send({ error: 'Instance introuvable' });
     }
 
     const current = existing.rows[0];
+    const targetId = current.id;
 
     const updated = await query(
       `UPDATE instances
@@ -199,7 +200,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         data.serverName ?? null,
         data.filePolicies ? JSON.stringify(data.filePolicies) : null,
         data.endpointId ?? null,
-        id
+        targetId
       ]
     );
 
@@ -219,7 +220,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
     preHandler: [requireRole(['admin'])]
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await query('DELETE FROM instances WHERE id = $1 RETURNING id, slug', [id]);
+    const res = await query('DELETE FROM instances WHERE id::text = $1 OR slug = $1 RETURNING id, slug', [id]);
     if (res.rows.length === 0) {
       return reply.status(404).send({ error: 'Instance introuvable' });
     }
@@ -326,7 +327,7 @@ export async function buildInstanceManifestV2(instanceId: string): Promise<any |
  * Writes the packpanel.json manifest statically to the endpoint directory for fast Nginx serving
  */
 export async function writeV2ManifestToEndpoint(instanceId: string): Promise<void> {
-  const instRes = await query('SELECT slug, endpoint_id FROM instances WHERE id = $1', [instanceId]);
+  const instRes = await query('SELECT slug, endpoint_id FROM instances WHERE id::text = $1 OR slug = $1', [instanceId]);
   if (instRes.rows.length === 0 || !instRes.rows[0].endpoint_id) return;
 
   const epRes = await query('SELECT slug FROM endpoints WHERE id = $1', [instRes.rows[0].endpoint_id]);
