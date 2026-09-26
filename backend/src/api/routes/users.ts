@@ -10,7 +10,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   // 1. List users (Admin only)
   fastify.get('/users', { preHandler: [requireRole(['admin'])] }, async (req, reply) => {
     const res = await query(
-      `SELECT id, username, role, created_at, last_login_at
+      `SELECT id, username, role, totp_enabled, created_at, last_login_at
        FROM users
        ORDER BY created_at ASC`
     );
@@ -148,5 +148,62 @@ export async function userRoutes(fastify: FastifyInstance) {
       total: parseInt(countRes.rows[0].count, 10),
       logs: res.rows
     });
+  });
+
+  // 6. Get Granular Endpoint Permissions for a user
+  fastify.get('/users/:id/permissions', { preHandler: [requireRole(['admin'])] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+
+    const res = await query(
+      `SELECT e.id as endpoint_id, e.name as endpoint_name, e.slug as endpoint_slug,
+              COALESCE(p.can_write, false) as can_write,
+              COALESCE(p.can_publish, false) as can_publish
+       FROM endpoints e
+       LEFT JOIN user_endpoint_permissions p ON p.endpoint_id = e.id AND p.user_id = $1
+       ORDER BY e.name ASC`,
+      [id]
+    );
+
+    return reply.send({ permissions: res.rows });
+  });
+
+  // 7. Update Granular Endpoint Permissions for a user
+  fastify.put('/users/:id/permissions', { preHandler: [requireRole(['admin'])] }, async (req, reply) => {
+    const { id: userId } = req.params as { id: string };
+    const schema = z.object({
+      permissions: z.array(z.object({
+        endpoint_id: z.string().uuid(),
+        can_write: z.boolean(),
+        can_publish: z.boolean()
+      }))
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message });
+    }
+
+    const { permissions } = parsed.data;
+
+    // Delete existing permissions for this user
+    await query('DELETE FROM user_endpoint_permissions WHERE user_id = $1', [userId]);
+
+    // Insert new permissions where at least one permission is true
+    for (const p of permissions) {
+      if (p.can_write || p.can_publish) {
+        await query(
+          `INSERT INTO user_endpoint_permissions (user_id, endpoint_id, can_write, can_publish)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (user_id, endpoint_id) DO UPDATE SET can_write = $3, can_publish = $4`,
+          [userId, p.endpoint_id, p.can_write, p.can_publish]
+        );
+      }
+    }
+
+    await recordAuditLog(req.user!.userId, 'update_permissions', 'user', userId, {
+      count: permissions.length
+    }, req.ip);
+
+    return reply.send({ success: true, message: 'Permissions granulaires mises à jour avec succès' });
   });
 }

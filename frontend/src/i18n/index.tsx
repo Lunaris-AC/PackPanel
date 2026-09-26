@@ -110,7 +110,13 @@ const translations: Record<Language, Translations> = {
       password: 'Mot de passe',
       leave_blank: 'Laisser vide pour ne pas modifier',
       delete_confirm: 'Supprimer définitivement cet utilisateur ? Ses sessions actives seront révoquées.',
-      cannot_delete_self: 'Impossible de supprimer votre propre compte.'
+      cannot_delete_self: 'Impossible de supprimer votre propre compte.',
+      security_2fa: 'Sécurité 2FA',
+      permissions: 'Permissions granulaires',
+      permissions_desc: 'Droits d’accès spécifiques par endpoint',
+      admin_bypass: 'Les administrateurs ont un accès total sans restriction.',
+      can_write: 'Écriture (Upload & Édition)',
+      can_publish: 'Publication de versions'
     },
     audit: {
       total: 'Événements enregistrés',
@@ -225,7 +231,13 @@ const translations: Record<Language, Translations> = {
       password: 'Password',
       leave_blank: 'Leave empty to keep current password',
       delete_confirm: 'Permanently delete this user? Active sessions will be terminated immediately.',
-      cannot_delete_self: 'You cannot delete your own account.'
+      cannot_delete_self: 'You cannot delete your own account.',
+      security_2fa: '2FA Security',
+      permissions: 'Granular Permissions',
+      permissions_desc: 'Endpoint-specific access control',
+      admin_bypass: 'Administrators have full unrestricted access to all endpoints.',
+      can_write: 'Write (Upload & Edit)',
+      can_publish: 'Publish releases'
     },
     audit: {
       total: 'Logged Events',

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Users,
   Shield,
+  ShieldCheck,
   UserPlus,
   Trash2,
   Edit2,
@@ -9,7 +10,7 @@ import {
   Clock
 } from 'lucide-react';
 import { api } from '../api/client';
-import { User, AuditLogItem } from '../types';
+import { User, AuditLogItem, UserEndpointPermission } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
@@ -36,8 +37,22 @@ export const UsersPage: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editRole, setEditRole] = useState<'admin' | 'operator' | 'viewer'>('operator');
   const [editPassword, setEditPassword] = useState('');
+  const [userPermissions, setUserPermissions] = useState<UserEndpointPermission[]>([]);
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+
+  const loadUserPermissions = async (userId: string) => {
+    setLoadingPermissions(true);
+    try {
+      const res = await api.get<{ permissions: UserEndpointPermission[] }>(`/users/${userId}/permissions`);
+      setUserPermissions(res.permissions || []);
+    } catch (e: any) {
+      console.error('Failed to load permissions', e);
+    } finally {
+      setLoadingPermissions(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -93,6 +108,27 @@ export const UsersPage: React.FC = () => {
     setEditRole(u.role);
     setEditPassword('');
     setEditModalOpen(true);
+    if (u.role !== 'admin') {
+      loadUserPermissions(u.id);
+    } else {
+      setUserPermissions([]);
+    }
+  };
+
+  const handleRoleChange = (newRoleVal: 'admin' | 'operator' | 'viewer') => {
+    setEditRole(newRoleVal);
+    if (newRoleVal !== 'admin' && editingUser && userPermissions.length === 0) {
+      loadUserPermissions(editingUser.id);
+    }
+  };
+
+  const handleTogglePermission = (endpointId: string, field: 'can_write' | 'can_publish') => {
+    setUserPermissions(prev =>
+      prev.map(p => {
+        if (p.endpoint_id !== endpointId) return p;
+        return { ...p, [field]: !p[field] };
+      })
+    );
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -110,10 +146,22 @@ export const UsersPage: React.FC = () => {
         role: editRole,
         password: editPassword || undefined
       });
+
+      if (editRole !== 'admin' && userPermissions.length > 0) {
+        await api.put(`/users/${editingUser.id}/permissions`, {
+          permissions: userPermissions.map(p => ({
+            endpoint_id: p.endpoint_id,
+            can_write: p.can_write,
+            can_publish: p.can_publish
+          }))
+        });
+      }
+
       toast.success(t('common.success'));
       setEditModalOpen(false);
       setEditingUser(null);
       setEditPassword('');
+      setUserPermissions([]);
       loadData();
     } catch (err: any) {
       toast.error(err.message || t('common.error'));
@@ -201,6 +249,7 @@ export const UsersPage: React.FC = () => {
                 <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50/70 dark:bg-zinc-800/40">
                   <th className="py-2.5 px-4">{t('users.username')}</th>
                   <th className="py-2.5 px-4">{t('users.role')}</th>
+                  <th className="py-2.5 px-4">{t('users.security_2fa')}</th>
                   <th className="py-2.5 px-4">{t('users.last_login')}</th>
                   <th className="py-2.5 px-4 text-right">{t('common.actions')}</th>
                 </tr>
@@ -234,6 +283,17 @@ export const UsersPage: React.FC = () => {
                           ? t('nav.role_operator')
                           : t('nav.role_viewer')}
                       </span>
+                    </td>
+
+                    <td className="py-2.5 px-4">
+                      {u.totp_enabled ? (
+                        <span className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 font-mono text-[11px]">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Active</span>
+                        </span>
+                      ) : (
+                        <span className="text-zinc-400 font-mono text-[11px]">—</span>
+                      )}
                     </td>
 
                     <td className="py-2.5 px-4 text-zinc-500 font-mono text-[11px]">
@@ -394,7 +454,7 @@ export const UsersPage: React.FC = () => {
             </label>
             <select
               value={editRole}
-              onChange={e => setEditRole(e.target.value as any)}
+              onChange={e => handleRoleChange(e.target.value as any)}
               className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             >
               <option value="operator">{t('nav.role_operator')}</option>
@@ -417,6 +477,67 @@ export const UsersPage: React.FC = () => {
             <p className="text-[11px] text-zinc-400 mt-1">
               {t('users.leave_blank')}
             </p>
+          </div>
+
+          {/* Granular Permissions Section */}
+          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="mb-2">
+              <h4 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                {t('users.permissions')}
+              </h4>
+              <p className="text-[11px] text-zinc-500">
+                {t('users.permissions_desc')}
+              </p>
+            </div>
+
+            {editRole === 'admin' ? (
+              <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/60 text-[11px] text-zinc-600 dark:text-zinc-400">
+                {t('users.admin_bypass')}
+              </div>
+            ) : loadingPermissions ? (
+              <div className="py-4 text-center text-xs text-zinc-400">
+                {t('common.loading')}
+              </div>
+            ) : userPermissions.length === 0 ? (
+              <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/60 text-[11px] text-zinc-400">
+                Aucun endpoint disponible pour la configuration.
+              </div>
+            ) : (
+              <div className="max-h-48 overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-lg divide-y divide-zinc-100 dark:divide-zinc-800">
+                {userPermissions.map(p => (
+                  <div key={p.endpoint_id} className="p-2.5 flex items-center justify-between text-xs hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30">
+                    <div className="truncate mr-3">
+                      <span className="font-semibold text-zinc-800 dark:text-zinc-200 truncate block">
+                        {p.endpoint_name}
+                      </span>
+                      <span className="font-mono text-[10px] text-zinc-400 truncate block">
+                        /{p.endpoint_slug}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-3 shrink-0 font-mono text-[11px]">
+                      <label className="flex items-center space-x-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={p.can_write}
+                          onChange={() => handleTogglePermission(p.endpoint_id, 'can_write')}
+                          className="rounded border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:ring-0"
+                        />
+                        <span className="text-zinc-600 dark:text-zinc-400">{t('users.can_write')}</span>
+                      </label>
+                      <label className="flex items-center space-x-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={p.can_publish}
+                          onChange={() => handleTogglePermission(p.endpoint_id, 'can_publish')}
+                          className="rounded border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:ring-0"
+                        />
+                        <span className="text-zinc-600 dark:text-zinc-400">{t('users.can_publish')}</span>
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end space-x-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">

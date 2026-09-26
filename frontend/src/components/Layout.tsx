@@ -11,13 +11,15 @@ import {
   Menu,
   X,
   Languages,
-  Sparkles
+  Sparkles,
+  Shield
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../i18n';
 import { PackPanelLogo } from './Logo';
 import { SetupWizard } from './SetupWizard';
+import { TwoFactorModal } from './TwoFactorModal';
 
 interface LayoutProps {
   currentTab: string;
@@ -33,6 +35,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
   const [sseConnected, setSseConnected] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [setupWizardOpen, setSetupWizardOpen] = useState<boolean>(false);
+  const [twoFactorModalOpen, setTwoFactorModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
     // SSE Live Connection
@@ -129,7 +132,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
               />
               <span className="font-mono">{sseConnected ? 'Live SSE' : 'Offline'}</span>
             </span>
-            <span className="font-mono text-[10px] text-zinc-400">MineLaunched</span>
+            <span className="font-mono text-[10px] text-zinc-400">v1.0.0</span>
           </div>
 
           <div className="flex items-center justify-between pt-2 border-t border-zinc-200/70 dark:border-zinc-800/70 px-2">
@@ -145,13 +148,26 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
                   : t('nav.role_viewer')}
               </p>
             </div>
-            <button
-              onClick={logout}
-              title={t('nav.logout')}
-              className="p-1.5 rounded-md text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center space-x-1 shrink-0">
+              <button
+                onClick={() => setTwoFactorModalOpen(true)}
+                title={user?.totp_enabled ? (language === 'fr' ? 'Double authentification 2FA activée' : '2FA Active') : (language === 'fr' ? 'Configurer la 2FA' : 'Configure 2FA')}
+                className={`p-1.5 rounded-md transition ${
+                  user?.totp_enabled
+                    ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                    : 'text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={logout}
+                title={t('nav.logout')}
+                className="p-1.5 rounded-md text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -178,18 +194,6 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
           </div>
 
           <div className="flex items-center space-x-2">
-            {/* Setup Wizard button (Admin only) */}
-            {user?.role === 'admin' && (
-              <button
-                onClick={() => setSetupWizardOpen(true)}
-                className="hidden sm:inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-md bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 transition"
-                title="Assistant de premier démarrage"
-              >
-                <Sparkles className="w-3 h-3 mr-1 text-sky-500" />
-                <span>Setup</span>
-              </button>
-            )}
-
             {/* Language Selector */}
             <div className="flex items-center bg-zinc-100 dark:bg-zinc-800/80 p-0.5 rounded-md text-[11px] font-mono font-medium">
               <button
@@ -243,6 +247,12 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
             window.location.reload();
           }
         }}
+      />
+
+      {/* Two-Factor Authentication Modal */}
+      <TwoFactorModal
+        isOpen={twoFactorModalOpen}
+        onClose={() => setTwoFactorModalOpen(false)}
       />
     </div>
   );

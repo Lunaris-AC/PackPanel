@@ -8,10 +8,17 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(64) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'operator', 'viewer')),
+    totp_secret TEXT,
+    totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    totp_recovery_codes TEXT[] DEFAULT '{}',
     last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_recovery_codes TEXT[] DEFAULT '{}';
 
 -- Sessions
 CREATE TABLE IF NOT EXISTS sessions (

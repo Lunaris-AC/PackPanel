@@ -4,8 +4,17 @@ export interface User {
   id: string;
   username: string;
   role: Role;
+  totp_enabled?: boolean;
   created_at?: string;
   last_login_at?: string;
+}
+
+export interface UserEndpointPermission {
+  endpoint_id: string;
+  endpoint_slug: string;
+  endpoint_name: string;
+  can_write: boolean;
+  can_publish: boolean;
 }
 
 export interface Endpoint {
