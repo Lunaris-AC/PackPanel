@@ -43,19 +43,10 @@ export async function runMigrations() {
       [config.ADMIN_LOGIN, hashed]
     );
 
-    const credsDir = config.DATA_DIR;
-    if (fs.existsSync(credsDir)) {
-      const credsPath = path.join(credsDir, 'admin_credentials.txt');
-      fs.writeFileSync(credsPath, `ADMIN_LOGIN=${config.ADMIN_LOGIN}\nADMIN_PASSWORD=${adminPass}\n`, {
-        mode: 0o600
-      });
-      console.log(`Administrator credentials saved securely to ${credsPath}`);
-    }
-
     if (generated) {
       console.log(`Generated Initial Admin Password: ${adminPass}`);
     } else {
-      console.log(`Initial Admin initialized with configured password.`);
+      console.log(`Initial Admin initialized.`);
     }
   } else {
     console.log('Administrator account already exists. Skipping bootstrap.');

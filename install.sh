@@ -144,19 +144,10 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 EOF
 
   chmod 600 "$ENV_FILE"
-
-  CREDS_FILE="${DATA_DIR}/admin_credentials.txt"
-  cat > "$CREDS_FILE" <<EOF
-# PackPanel Initial Credentials
-ADMIN_LOGIN=${ADMIN_LOGIN}
-ADMIN_PASSWORD=${ADMIN_PASSWORD}
-INITIALIZED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-EOF
-  chmod 600 "$CREDS_FILE"
-  echo -e "  ${GREEN}✓${NC} Secrets generated and secured (chmod 600)."
+  echo -e "  ${GREEN}✓${NC} Secrets generated and secured."
 else
   echo -e "  ${YELLOW}ℹ${NC} Existing .env found, preserving configuration."
-  ADMIN_PASSWORD=$(grep "^ADMIN_PASSWORD=" "${DATA_DIR}/admin_credentials.txt" 2>/dev/null | cut -d'=' -f2 || echo "<unchanged>")
+  ADMIN_PASSWORD="<already initialized>"
 fi
 
 # 6. Build and launch Docker containers
@@ -201,6 +192,9 @@ const { hashPassword } = require('./dist/auth/argon2');
 })().catch(e => { console.error(e); process.exit(1); });
 " >/dev/null 2>&1 || true
 
+# Security hardening: clear initial password from .env after bootstrap
+sed -i "s/^ADMIN_DEFAULT_PASSWORD=.*/ADMIN_DEFAULT_PASSWORD=/" "$ENV_FILE" 2>/dev/null || true
+
 docker compose restart nginx >/dev/null 2>&1
 
 # 8. Health check
@@ -228,10 +222,10 @@ echo ""
 echo -e "  ${BOLD}Admin Panel URL :${NC} http://localhost:${ADMIN_ORIGIN_PORT}/"
 echo -e "  ${BOLD}Public CDN URL  :${NC} http://localhost:${FILES_ORIGIN_PORT}/"
 echo ""
-echo -e "  ${BOLD}Initial Credentials :${NC}"
+echo -e "  ${BOLD}Initial Credentials (displayed once, never saved in plaintext on disk) :${NC}"
 echo -e "  • Username : ${CYAN}${ADMIN_LOGIN}${NC}"
 echo -e "  • Password : ${CYAN}${ADMIN_PASSWORD}${NC}"
-echo -e "  • File     : ${DATA_DIR}/admin_credentials.txt (permissions 600)"
+echo -e "  ${YELLOW}⚠ Please save this password immediately in your password manager.${NC}"
 echo ""
 echo -e "  ${BOLD}Reverse Proxy & CDN Setup :${NC}"
 echo -e "  1. Forward ${ADMIN_FQDN} -> http://<SERVER_IP>:${ADMIN_ORIGIN_PORT} (Enable WebSocket/SSE, disable buffering)"
