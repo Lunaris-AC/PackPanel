@@ -4,8 +4,6 @@ import {
   Plus,
   Copy,
   Check,
-  ExternalLink,
-  Settings,
   Trash2,
   Share2,
   AlertTriangle,
@@ -16,6 +14,7 @@ import { Endpoint } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
+import { useTranslation } from '../i18n';
 
 interface EndpointsPageProps {
   onNavigate: (tab: string, meta?: any) => void;
@@ -24,7 +23,7 @@ interface EndpointsPageProps {
 function formatBytes(bytes: number) {
   if (!bytes || bytes === 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'Ko', 'Mo', 'Go', 'To'];
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
@@ -32,6 +31,8 @@ function formatBytes(bytes: number) {
 export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { t } = useTranslation();
+
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -48,7 +49,6 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
   const [newDesc, setNewDesc] = useState('');
   const [cleanupMods, setCleanupMods] = useState(true);
   const [cleanupConfig, setCleanupConfig] = useState(false);
-  const [autoPublish, setAutoPublish] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
 
   const canEdit = user?.role === 'admin' || user?.role === 'operator';
@@ -58,7 +58,7 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
       const res = await api.get<{ endpoints: Endpoint[] }>('/endpoints');
       setEndpoints(res.endpoints);
     } catch (err: any) {
-      toast.error('Impossible de charger les endpoints');
+      toast.error(err.message || t('common.error'));
     } finally {
       setLoading(false);
     }
@@ -68,38 +68,37 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
     loadEndpoints();
   }, []);
 
-  const handleCopy = (url: string, id: string) => {
-    navigator.clipboard.writeText(url);
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
     setCopiedId(id);
-    toast.success('URL MineLaunched copiée dans le presse-papiers');
-    setTimeout(() => setCopiedId(null), 2500);
+    toast.success(t('common.copied'));
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSlug.trim() || !newName.trim()) return;
 
+    setFormSubmitting(true);
     const cleanupRules: string[] = [];
     if (cleanupMods) cleanupRules.push('mods');
     if (cleanupConfig) cleanupRules.push('config');
 
-    setFormSubmitting(true);
     try {
       await api.post('/endpoints', {
         slug: newSlug.trim().toLowerCase(),
         name: newName.trim(),
         description: newDesc.trim(),
-        cleanup_rules: cleanupRules,
-        auto_publish: autoPublish
+        cleanup_rules: cleanupRules
       });
-      toast.success('Endpoint créé avec succès');
+      toast.success(t('common.success'));
       setCreateModalOpen(false);
       setNewSlug('');
       setNewName('');
       setNewDesc('');
       loadEndpoints();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de la création');
+      toast.error(err.message || t('common.error'));
     } finally {
       setFormSubmitting(false);
     }
@@ -114,33 +113,36 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
       await api.post(`/endpoints/${selectedSourceEp.id}/promote`, {
         targetEndpointId
       });
-      toast.success(`Version de ${selectedSourceEp.name} déployée vers l'endpoint cible`);
+      toast.success(t('common.success'));
       setPromoteModalOpen(false);
+      setSelectedSourceEp(null);
+      setTargetEndpointId('');
       loadEndpoints();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de la promotion');
+      toast.error(err.message || t('common.error'));
     } finally {
       setFormSubmitting(false);
     }
   };
 
   const handleDelete = async (ep: Endpoint) => {
-    if (!window.confirm(`Confirmez-vous la suppression définitive de l'endpoint "${ep.name}" ?`)) {
+    if (!window.confirm(t('endpoints.delete_confirm'))) {
       return;
     }
+
     try {
       await api.delete(`/endpoints/${ep.id}`);
-      toast.success('Endpoint supprimé');
+      toast.success(t('common.success'));
       loadEndpoints();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur suppression');
+      toast.error(err.message || t('common.error'));
     }
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-zinc-900 dark:border-zinc-100"></div>
       </div>
     );
   }
@@ -150,89 +152,96 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-            Endpoints de distribution
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight font-sans">
+            {t('endpoints.title')}
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Gérez vos environnements de jeu, serveurs et profils MineLaunched indépendants
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+            {t('endpoints.subtitle')}
           </p>
         </div>
         {canEdit && (
           <button
             onClick={() => setCreateModalOpen(true)}
-            className="inline-flex items-center px-4 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm rounded-xl shadow-md shadow-brand-600/20 transition self-start sm:self-auto"
+            className="inline-flex items-center px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 text-xs font-semibold rounded-lg shadow-xs transition self-start sm:self-auto"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Nouvel endpoint
+            <Plus className="w-3.5 h-3.5 mr-1.5" />
+            {t('endpoints.new_btn')}
           </button>
         )}
       </div>
 
       {/* Grid of Endpoints */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {endpoints.map(ep => (
           <div
             key={ep.id}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:border-brand-500/50 transition duration-150"
+            className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-xs flex flex-col justify-between hover:border-zinc-300 dark:hover:border-zinc-700 transition"
           >
             <div>
               {/* Top meta */}
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-2">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 font-sans">
                     {ep.name}
                   </h3>
-                  <div className="font-mono text-xs text-brand-600 dark:text-brand-400 mt-0.5">
+                  <div className="font-mono text-xs text-zinc-500 mt-0.5">
                     /{ep.slug}
                   </div>
                 </div>
                 {ep.active_release_id ? (
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300">
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50">
                     {ep.active_release_id}
                   </span>
                 ) : (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-500">
-                    Brouillon
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
+                    {t('endpoints.badge_draft')}
                   </span>
                 )}
               </div>
 
               {ep.description && (
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 line-clamp-2">
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3 line-clamp-2">
                   {ep.description}
                 </p>
               )}
 
               {/* MineLaunched URL Box */}
-              <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-xl">
-                <span className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
-                  URL Contrat MineLaunched
-                </span>
+              <div className="mt-3 p-2.5 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700/60 rounded-lg">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="block text-[10px] font-semibold uppercase text-zinc-400">
+                    {t('endpoints.manifest_url')}
+                  </span>
+                  {!ep.active_release_id && (
+                    <span className="text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400">
+                      HTTP 404
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-slate-700 dark:text-slate-300 truncate mr-2" title={ep.manifest_url}>
+                  <span className="font-mono text-[11px] text-zinc-700 dark:text-zinc-300 truncate mr-2" title={ep.manifest_url}>
                     {ep.manifest_url}
                   </span>
                   <button
                     onClick={() => handleCopy(ep.manifest_url, ep.id)}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition shrink-0"
-                    title="Copier l'URL"
+                    className="p-1 rounded text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition shrink-0"
+                    title={t('common.copy')}
                   >
-                    {copiedId === ep.id ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                    {copiedId === ep.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
 
               {/* Stats */}
-              <div className="grid grid-cols-2 gap-2 mt-4 text-xs text-slate-500 dark:text-slate-400">
+              <div className="grid grid-cols-2 gap-2 mt-3 text-xs text-zinc-500 font-mono text-[11px]">
                 <div>
-                  <span className="text-slate-400">Fichiers : </span>
-                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                  <span className="text-zinc-400">{t('endpoints.files_label')}: </span>
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">
                     {ep.active_total_files || 0}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400">Taille : </span>
-                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                  <span className="text-zinc-400">{t('endpoints.size_label')}: </span>
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">
                     {formatBytes(Number(ep.active_total_bytes) || 0)}
                   </span>
                 </div>
@@ -240,13 +249,13 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
             </div>
 
             {/* Actions footer */}
-            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+            <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
               <button
                 onClick={() => onNavigate(`endpoint:${ep.id}`)}
-                className="inline-flex items-center text-xs font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-500 transition"
+                className="inline-flex items-center text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:text-sky-600 dark:hover:text-sky-400 transition"
               >
-                <FolderOpen className="w-4 h-4 mr-1.5" />
-                Explorateur & Fichiers
+                <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+                <span>Explorateur & Versions</span>
               </button>
 
               <div className="flex items-center space-x-1">
@@ -256,19 +265,19 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
                       setSelectedSourceEp(ep);
                       setPromoteModalOpen(true);
                     }}
-                    title="Promouvoir / Cloner vers un autre endpoint"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                    title="Promouvoir vers un autre endpoint"
+                    className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
                   >
-                    <Share2 className="w-4 h-4" />
+                    <Share2 className="w-3.5 h-3.5" />
                   </button>
                 )}
                 {user?.role === 'admin' && (
                   <button
                     onClick={() => handleDelete(ep)}
-                    title="Supprimer l'endpoint"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50 transition"
+                    title={t('common.delete')}
+                    className="p-1.5 rounded-md text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
@@ -281,102 +290,107 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
       <Modal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        title="Créer un nouvel endpoint"
+        title={t('endpoints.new_btn')}
       >
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
               Nom d'affichage
             </label>
             <input
               type="text"
               required
-              placeholder="ex: FTB Evolution - Production"
+              placeholder="ex: Create Adventures"
               value={newName}
-              onChange={e => setNewName(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              onChange={e => {
+                setNewName(e.target.value);
+                if (!newSlug) {
+                  setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-'));
+                }
+              }}
+              className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
-              Slug (Identifiant d'URL stable)
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              Slug (Identifiant d'URL)
             </label>
             <input
               type="text"
               required
               pattern="^[a-z0-9_-]+$"
-              placeholder="ex: ftbevol-prod"
+              placeholder="ex: create-adventures"
               value={newSlug}
-              onChange={e => setNewSlug(e.target.value)}
-              className="w-full px-3 py-2 font-mono text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              onChange={e => setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+              className="w-full px-3 py-2 font-mono text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             />
-            <p className="text-[11px] text-slate-400 mt-1">
-              Uniquement minuscules, chiffres et tirets. Détermine l'URL publique <code className="text-brand-500">/{newSlug || '...'}/index.php</code>.
+            <p className="text-[11px] text-zinc-400 mt-1">
+              Minuscules, chiffres et tirets. Détermine l'URL publique <code className="font-mono text-zinc-700 dark:text-zinc-300">/{newSlug || '...'}/index.php</code>.
             </p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
               Description (facultatif)
             </label>
             <textarea
               rows={2}
               value={newDesc}
               onChange={e => setNewDesc(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             />
           </div>
 
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
-            <span className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">
+          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
+            <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
               Directives de nettoyage MineLaunched (dirCheckUselessFiles)
             </span>
 
-            <label className="flex items-center space-x-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+            <label className="flex items-center space-x-2 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
               <input
                 type="checkbox"
                 checked={cleanupMods}
                 onChange={e => setCleanupMods(e.target.checked)}
-                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
               />
               <span>Nettoyer le dossier <strong>mods</strong> (Recommandé)</span>
             </label>
 
-            <label className="flex items-center space-x-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+            <label className="flex items-center space-x-2 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
               <input
                 type="checkbox"
                 checked={cleanupConfig}
                 onChange={e => setCleanupConfig(e.target.checked)}
-                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
               />
               <span>Nettoyer le dossier <strong>config</strong></span>
             </label>
 
             {cleanupConfig && (
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl flex items-start space-x-2 text-xs text-amber-800 dark:text-amber-200">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500 mt-0.5" />
+              <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-lg flex items-start space-x-2 text-xs text-amber-800 dark:text-amber-200">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-0.5" />
                 <span>
-                  <strong>Attention :</strong> Activer le nettoyage automatique du dossier <code>config</code> supprimera les modifications locales effectuées par les joueurs.
+                  Attention : Nettoyer <code>config</code> supprimera les modifications locales effectuées par les joueurs.
                 </span>
               </div>
             )}
           </div>
 
-          <div className="pt-4 flex justify-end space-x-2">
+          <div className="pt-3 flex justify-end space-x-2 border-t border-zinc-100 dark:border-zinc-800">
             <button
               type="button"
               onClick={() => setCreateModalOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 rounded-lg transition"
             >
-              Annuler
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={formSubmitting}
-              className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm rounded-lg shadow disabled:opacity-60"
+              className="px-4 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs rounded-lg hover:bg-zinc-800 dark:hover:bg-white shadow-xs transition disabled:opacity-50"
             >
-              {formSubmitting ? 'Création...' : 'Créer l’endpoint'}
+              {formSubmitting ? t('common.loading') : t('common.create')}
             </button>
           </div>
         </form>
@@ -389,19 +403,19 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
         title="Promouvoir / Cloner la version active"
       >
         <form onSubmit={handlePromote} className="space-y-4">
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            Cette action copiera la version active de <strong>{selectedSourceEp?.name}</strong> vers un autre endpoint (par exemple de Préproduction vers Production) et la publiera immédiatement de manière atomique.
+          <p className="text-xs text-zinc-600 dark:text-zinc-400">
+            Copiera la version active de <strong>{selectedSourceEp?.name}</strong> vers un autre endpoint (ex. Préproduction vers Production) et la publiera immédiatement de manière atomique.
           </p>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
               Endpoint de destination
             </label>
             <select
               required
               value={targetEndpointId}
               onChange={e => setTargetEndpointId(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             >
               <option value="">Sélectionnez un endpoint cible...</option>
               {endpoints
@@ -414,20 +428,20 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
             </select>
           </div>
 
-          <div className="pt-4 flex justify-end space-x-2">
+          <div className="pt-3 flex justify-end space-x-2 border-t border-zinc-100 dark:border-zinc-800">
             <button
               type="button"
               onClick={() => setPromoteModalOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 rounded-lg transition"
             >
-              Annuler
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={formSubmitting || !targetEndpointId}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-sm rounded-lg shadow disabled:opacity-60"
+              className="px-4 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs rounded-lg hover:bg-zinc-800 dark:hover:bg-white shadow-xs transition disabled:opacity-50"
             >
-              {formSubmitting ? 'Promotion...' : 'Déployer la version'}
+              {formSubmitting ? t('common.loading') : 'Déployer'}
             </button>
           </div>
         </form>

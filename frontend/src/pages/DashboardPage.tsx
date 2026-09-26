@@ -3,8 +3,6 @@ import {
   Server,
   HardDrive,
   Cpu,
-  Layers,
-  Sparkles,
   ArrowUpRight,
   Clock,
   CheckCircle,
@@ -13,6 +11,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 import { DashboardStats, Endpoint, Job } from '../types';
+import { useTranslation } from '../i18n';
 
 interface DashboardData {
   summary: DashboardStats;
@@ -28,12 +27,13 @@ function formatBytes(bytes: number, decimals = 2) {
   if (!bytes || bytes === 0) return '0 B';
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['B', 'Ko', 'Mo', 'Go', 'To'];
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
+  const { t } = useTranslation();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -42,7 +42,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       const res = await api.get<DashboardData>('/stats/dashboard');
       setData(res);
     } catch (e) {
-      console.error('Erreur chargement dashboard', e);
+      console.error('Error loading dashboard', e);
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-zinc-900 dark:border-zinc-100"></div>
       </div>
     );
   }
@@ -65,184 +65,170 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const s = data?.summary;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Top Banner / Heading */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-            Vue d'ensemble
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight font-sans">
+            {t('dashboard.title')}
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Supervision de la distribution des packs, du stockage CAS et des traitements
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+            {t('dashboard.subtitle')}
           </p>
         </div>
         <button
           onClick={() => onNavigate('endpoints')}
-          className="inline-flex items-center px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-semibold rounded-xl shadow-md shadow-brand-600/20 transition self-start md:self-auto"
+          className="inline-flex items-center px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 text-xs font-semibold rounded-lg shadow-xs transition self-start sm:self-auto"
         >
-          <span>Gérer les endpoints</span>
-          <ArrowUpRight className="w-4 h-4 ml-1.5" />
+          <span>{t('dashboard.create_endpoint')}</span>
+          <ArrowUpRight className="w-3.5 h-3.5 ml-1" />
         </button>
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Endpoints */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Endpoints
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              {t('dashboard.endpoints_count')}
             </span>
-            <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
-              <Server className="w-5 h-5" />
-            </div>
+            <div className="w-2 h-2 rounded-full bg-sky-500"></div>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+          <div className="mt-3">
+            <div className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-100">
               {s?.totalEndpoints || 0}
             </div>
-            <div className="text-xs text-slate-500 mt-1">
-              {s?.activeReleases || 0} version(s) active(s) distribuée(s)
+            <div className="text-[11px] text-zinc-500 mt-0.5">
+              {s?.activeReleases || 0} active release(s)
             </div>
           </div>
         </div>
 
         {/* Physical Storage (CAS) */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Stockage Physique CAS
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              {t('dashboard.physical_storage')}
             </span>
-            <div className="p-2 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400">
-              <HardDrive className="w-5 h-5" />
-            </div>
+            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+          <div className="mt-3">
+            <div className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-100">
               {formatBytes(s?.physicalBytes || 0)}
             </div>
-            <div className="text-xs text-slate-500 mt-1">
-              {s?.physicalObjects || 0} objet(s) unique(s)
+            <div className="text-[11px] text-zinc-500 mt-0.5 font-mono">
+              {s?.physicalObjects || 0} CAS objects
             </div>
           </div>
         </div>
 
         {/* Deduplication Savings */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Économie Déduplication
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              {t('dashboard.dedup_ratio')}
             </span>
-            <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400">
-              <Sparkles className="w-5 h-5" />
-            </div>
+            <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
-              {formatBytes(s?.savedBytes || 0)}
+          <div className="mt-3">
+            <div className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-100">
+              {s?.deduplicationRatio || '1.00'}x
             </div>
-            <div className="text-xs text-slate-500 mt-1">
-              Ratio de compression : {s?.deduplicationRatio || '1.00'}x
+            <div className="text-[11px] text-zinc-500 mt-0.5">
+              {formatBytes(s?.savedBytes || 0)} saved
             </div>
           </div>
         </div>
 
         {/* Disk Free / Total */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Disque Serveur
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              {t('dashboard.storage_health')}
             </span>
-            <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400">
-              <Cpu className="w-5 h-5" />
-            </div>
+            <div className="w-2 h-2 rounded-full bg-zinc-400"></div>
           </div>
-          <div className="mt-4">
-            <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+          <div className="mt-3">
+            <div className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-100">
               {formatBytes(s?.diskFree || 0)}
             </div>
-            <div className="text-xs text-slate-500 mt-1">
-              Libre sur {formatBytes(s?.diskTotal || 0)}
+            <div className="text-[11px] text-zinc-500 mt-0.5">
+              Free of {formatBytes(s?.diskTotal || 0)}
             </div>
           </div>
         </div>
       </div>
 
       {/* Main Grid: Endpoints Table & Recent Jobs */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Endpoints Table (2 cols) */}
-        <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Endpoints récents
+        <div className="lg:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-xs">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+              {t('dashboard.recent_releases')}
             </h2>
             <button
               onClick={() => onNavigate('endpoints')}
-              className="text-xs text-brand-600 dark:text-brand-400 font-semibold hover:underline"
+              className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium"
             >
-              Voir tout ({s?.totalEndpoints || 0})
+              View all ({s?.totalEndpoints || 0})
             </button>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  <th className="pb-3">Nom</th>
-                  <th className="pb-3">Slug</th>
-                  <th className="pb-3">Version Active</th>
-                  <th className="pb-3">Fichiers</th>
-                  <th className="pb-3">Taille</th>
-                  <th className="pb-3 text-right">Action</th>
+                <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold text-zinc-500 bg-zinc-50/50 dark:bg-zinc-800/30">
+                  <th className="py-2.5 px-3">Name</th>
+                  <th className="py-2.5 px-3">Slug</th>
+                  <th className="py-2.5 px-3">Active Version</th>
+                  <th className="py-2.5 px-3">Files</th>
+                  <th className="py-2.5 px-3">Size</th>
+                  <th className="py-2.5 px-3 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 font-mono text-[11px]">
                 {(!data?.endpoints || data.endpoints.length === 0) ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
-                      Aucun endpoint configuré. Créez-en un pour commencer !
+                    <td colSpan={6} className="py-8 text-center text-zinc-400 font-sans text-xs">
+                      {t('dashboard.no_releases')}
                     </td>
                   </tr>
                 ) : (
-                  data.endpoints.map(ep => (
+                  data.endpoints.slice(0, 5).map(ep => (
                     <tr
                       key={ep.id}
-                      className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition group cursor-pointer"
                       onClick={() => onNavigate(`endpoint:${ep.id}`)}
+                      className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40 cursor-pointer transition"
                     >
-                      <td className="py-3 font-semibold text-slate-900 dark:text-slate-100">
+                      <td className="py-2.5 px-3 font-sans font-medium text-zinc-900 dark:text-zinc-100">
                         {ep.name}
                       </td>
-                      <td className="py-3 font-mono text-xs text-slate-500">
-                        {ep.slug}
+                      <td className="py-2.5 px-3 text-zinc-500">
+                        /{ep.slug}
                       </td>
-                      <td className="py-3">
+                      <td className="py-2.5 px-3">
                         {ep.active_release_id ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50">
                             {ep.active_release_id}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-500">
-                            Non publié
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
+                            draft
                           </span>
                         )}
                       </td>
-                      <td className="py-3 text-slate-600 dark:text-slate-400">
+                      <td className="py-2.5 px-3 text-zinc-500">
                         {ep.active_total_files || 0}
                       </td>
-                      <td className="py-3 text-slate-600 dark:text-slate-400">
-                        {formatBytes(Number(ep.active_total_bytes) || 0)}
+                      <td className="py-2.5 px-3 text-zinc-500">
+                        {formatBytes(Number(ep.active_total_bytes || 0))}
                       </td>
-                      <td className="py-3 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onNavigate(`endpoint:${ep.id}`);
-                          }}
-                          className="text-brand-600 hover:text-brand-500 font-medium text-xs p-1.5"
-                        >
-                          Ouvrir &rarr;
-                        </button>
+                      <td className="py-2.5 px-3 text-right">
+                        <span className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition font-sans text-xs font-semibold">
+                          Open →
+                        </span>
                       </td>
                     </tr>
                   ))
@@ -252,61 +238,51 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Recent Jobs Side Panel (1 col) */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Traitements récents
+        {/* Recent Jobs (1 col) */}
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-xs">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
+              {t('dashboard.active_jobs')}
             </h2>
             <button
               onClick={() => onNavigate('jobs')}
-              className="text-xs text-brand-600 dark:text-brand-400 font-semibold hover:underline"
+              className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium"
             >
-              Historique
+              Logs
             </button>
           </div>
 
-          <div className="space-y-3 flex-1 overflow-y-auto">
+          <div className="space-y-2">
             {(!data?.recentJobs || data.recentJobs.length === 0) ? (
-              <div className="py-8 text-center text-slate-400 text-xs">
-                Aucune tâche récente
+              <div className="py-8 text-center text-zinc-400 text-xs">
+                No active background tasks
               </div>
             ) : (
-              data.recentJobs.map(j => (
+              data.recentJobs.slice(0, 5).map(job => (
                 <div
-                  key={j.id}
-                  className="p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 flex items-center justify-between text-xs"
+                  key={job.id}
+                  className="p-2.5 rounded-lg border border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-800/30 flex items-center justify-between text-xs"
                 >
-                  <div className="space-y-1">
-                    <p className="font-semibold text-slate-800 dark:text-slate-200">
-                      {j.job_type}
-                    </p>
-                    <p className="text-slate-400 flex items-center">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {new Date(j.created_at).toLocaleTimeString('fr-FR')}
-                    </p>
+                  <div className="truncate mr-2 font-mono">
+                    <div className="font-semibold text-zinc-800 dark:text-zinc-200 truncate text-[11px]">
+                      {job.job_type}
+                    </div>
+                    <div className="text-[10px] text-zinc-400">
+                      {new Date(job.created_at).toLocaleTimeString()}
+                    </div>
                   </div>
                   <div>
-                    {j.status === 'completed' && (
-                      <span className="inline-flex items-center text-emerald-600 dark:text-emerald-400 font-medium">
-                        <CheckCircle className="w-3.5 h-3.5 mr-1" /> Terminé
-                      </span>
-                    )}
-                    {j.status === 'running' && (
-                      <span className="inline-flex items-center text-blue-600 dark:text-blue-400 font-medium animate-pulse">
-                        <Cpu className="w-3.5 h-3.5 mr-1" /> En cours
-                      </span>
-                    )}
-                    {j.status === 'pending' && (
-                      <span className="inline-flex items-center text-amber-600 dark:text-amber-400 font-medium">
-                        <Clock className="w-3.5 h-3.5 mr-1" /> En attente
-                      </span>
-                    )}
-                    {j.status === 'failed' && (
-                      <span className="inline-flex items-center text-red-600 dark:text-red-400 font-medium" title={j.error_message}>
-                        <XCircle className="w-3.5 h-3.5 mr-1" /> Échec
-                      </span>
-                    )}
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium ${
+                        job.status === 'completed'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400'
+                          : job.status === 'failed'
+                          ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400'
+                          : 'bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 animate-pulse'
+                      }`}
+                    >
+                      {job.status}
+                    </span>
                   </div>
                 </div>
               ))

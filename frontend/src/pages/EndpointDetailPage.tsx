@@ -140,17 +140,24 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
           </div>
 
           {/* Copy URL Pill */}
-          <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 px-3.5 py-2 rounded-xl text-xs font-mono">
-            <span className="text-slate-600 dark:text-slate-300 truncate max-w-xs md:max-w-md">
-              {endpoint.manifest_url}
-            </span>
-            <button
-              onClick={handleCopyUrl}
-              className="p-1 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition shrink-0"
-              title="Copier l'URL MineLaunched"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-            </button>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center space-x-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 px-3.5 py-2 rounded-xl text-xs font-mono">
+              <span className="text-slate-600 dark:text-slate-300 truncate max-w-xs md:max-w-md">
+                {endpoint.manifest_url}
+              </span>
+              <button
+                onClick={handleCopyUrl}
+                className="p-1 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition shrink-0"
+                title="Copier l'URL MineLaunched"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            {!endpoint.active_release_id && (
+              <span className="text-[11px] text-amber-600 dark:text-amber-400 font-sans">
+                ⚠ Active dès la publication de la 1ère version (HTTP 404 actuellement)
+              </span>
+            )}
           </div>
         </div>
 

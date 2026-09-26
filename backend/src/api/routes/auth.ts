@@ -5,9 +5,26 @@ import { verifyPassword, hashPassword } from '../../auth/argon2';
 import { createSession, revokeSession, SESSION_COOKIE_NAME } from '../../auth/tokens';
 import { authenticateRequest, recordAuditLog } from '../../auth/middleware';
 
+interface LoginRateLimit {
+  attempts: number;
+  blockedUntil: number;
+}
+const loginRateLimitMap = new Map<string, LoginRateLimit>();
+
 export async function authRoutes(fastify: FastifyInstance) {
   // Login
   fastify.post('/login', async (req, reply) => {
+    const ip = req.ip;
+    const now = Date.now();
+    const rate = loginRateLimitMap.get(ip);
+    if (rate && rate.blockedUntil > now) {
+      const waitSec = Math.ceil((rate.blockedUntil - now) / 1000);
+      reply.header('Retry-After', waitSec);
+      return reply.status(429).send({
+        error: `Trop de tentatives de connexion infructueuses. Veuillez réessayer dans ${waitSec} secondes.`
+      });
+    }
+
     const bodySchema = z.object({
       username: z.string().min(1),
       password: z.string().min(1),
@@ -22,16 +39,26 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     const res = await query('SELECT id, username, password_hash, role FROM users WHERE username = $1', [username]);
     if (res.rows.length === 0) {
+      const current = loginRateLimitMap.get(ip) || { attempts: 0, blockedUntil: 0 };
+      current.attempts += 1;
+      if (current.attempts >= 5) current.blockedUntil = now + 5 * 60 * 1000;
+      loginRateLimitMap.set(ip, current);
       return reply.status(401).send({ error: 'Nom d’utilisateur ou mot de passe incorrect' });
     }
 
     const user = res.rows[0];
     const valid = await verifyPassword(user.password_hash, password);
     if (!valid) {
+      const current = loginRateLimitMap.get(ip) || { attempts: 0, blockedUntil: 0 };
+      current.attempts += 1;
+      if (current.attempts >= 5) current.blockedUntil = now + 5 * 60 * 1000;
+      loginRateLimitMap.set(ip, current);
       return reply.status(401).send({ error: 'Nom d’utilisateur ou mot de passe incorrect' });
     }
 
-    const ip = req.ip;
+    // Login success: reset rate limit counter
+    loginRateLimitMap.delete(ip);
+
     const ua = req.headers['user-agent'];
     const { sessionId, token } = await createSession(user.id, ip, ua);
 

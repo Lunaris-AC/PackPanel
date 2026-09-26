@@ -4,8 +4,8 @@ import {
   Shield,
   UserPlus,
   Trash2,
+  Edit2,
   Key,
-  FileSpreadsheet,
   Clock
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -13,21 +13,30 @@ import { User, AuditLogItem } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
+import { useTranslation } from '../i18n';
 
 export const UsersPage: React.FC = () => {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   const [activeTab, setActiveTab] = useState<'users' | 'audit'>('users');
   const [users, setUsers] = useState<User[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Modals
+  // Create Modal state
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'operator' | 'viewer'>('operator');
+
+  // Edit Modal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editRole, setEditRole] = useState<'admin' | 'operator' | 'viewer'>('operator');
+  const [editPassword, setEditPassword] = useState('');
+
   const [submitting, setSubmitting] = useState(false);
 
   const loadData = async () => {
@@ -41,7 +50,7 @@ export const UsersPage: React.FC = () => {
         setAuditLogs(res.logs);
       }
     } catch (e: any) {
-      toast.error(e?.message || 'Erreur chargement des données');
+      toast.error(e?.message || t('common.error'));
     } finally {
       setLoading(false);
     }
@@ -55,6 +64,11 @@ export const UsersPage: React.FC = () => {
     e.preventDefault();
     if (!newUsername.trim() || !newPassword) return;
 
+    if (newPassword.length < 10 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      toast.error('Le mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       await api.post('/users', {
@@ -62,13 +76,47 @@ export const UsersPage: React.FC = () => {
         password: newPassword,
         role: newRole
       });
-      toast.success(`Utilisateur "${newUsername}" créé avec succès`);
+      toast.success(t('common.success'));
       setCreateModalOpen(false);
       setNewUsername('');
       setNewPassword('');
       loadData();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur création utilisateur');
+      toast.error(err.message || t('common.error'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleOpenEdit = (u: User) => {
+    setEditingUser(u);
+    setEditRole(u.role);
+    setEditPassword('');
+    setEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    if (editPassword && (editPassword.length < 10 || !/[A-Z]/.test(editPassword) || !/[a-z]/.test(editPassword) || !/[0-9]/.test(editPassword))) {
+      toast.error('Le nouveau mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.put(`/users/${editingUser.id}`, {
+        role: editRole,
+        password: editPassword || undefined
+      });
+      toast.success(t('common.success'));
+      setEditModalOpen(false);
+      setEditingUser(null);
+      setEditPassword('');
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || t('common.error'));
     } finally {
       setSubmitting(false);
     }
@@ -76,173 +124,188 @@ export const UsersPage: React.FC = () => {
 
   const handleDeleteUser = async (u: User) => {
     if (u.id === currentUser?.id) {
-      toast.error('Vous ne pouvez pas supprimer votre propre compte');
+      toast.error(t('users.cannot_delete_self'));
       return;
     }
-    if (!window.confirm(`Confirmez-vous la suppression de l'utilisateur "${u.username}" ?`)) {
+    if (!window.confirm(t('users.delete_confirm'))) {
       return;
     }
 
     try {
       await api.delete(`/users/${u.id}`);
-      toast.success('Utilisateur supprimé');
+      toast.success(t('common.success'));
       loadData();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur suppression utilisateur');
+      toast.error(err.message || t('common.error'));
     }
   };
 
   return (
     <div className="space-y-6">
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-            Administration & Sécurité
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight font-sans">
+            {t('users.title')}
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Gestion des utilisateurs, des accès RBAC et journal d'audit complet
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+            {t('users.subtitle')}
           </p>
         </div>
 
         {activeTab === 'users' && (
           <button
             onClick={() => setCreateModalOpen(true)}
-            className="inline-flex items-center px-4 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs rounded-xl shadow-md shadow-brand-600/20 transition self-start sm:self-auto"
+            className="inline-flex items-center px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 text-xs font-semibold rounded-lg shadow-sm transition self-start sm:self-auto"
           >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Nouvel utilisateur
+            <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+            {t('users.add_user')}
           </button>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center space-x-2 border-b border-slate-200 dark:border-slate-800 pb-3 text-sm font-semibold">
+      {/* Segmented Tabs */}
+      <div className="flex items-center space-x-1 border-b border-zinc-200 dark:border-zinc-800 pb-2 text-xs font-medium">
         <button
           onClick={() => setActiveTab('users')}
-          className={`px-3 py-1.5 rounded-lg transition ${
+          className={`px-3 py-1.5 rounded-md transition ${
             activeTab === 'users'
-              ? 'bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300'
-              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold'
+              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
           }`}
         >
-          Comptes utilisateurs ({users.length})
+          {t('users.tab_users')} ({users.length})
         </button>
         <button
           onClick={() => setActiveTab('audit')}
-          className={`px-3 py-1.5 rounded-lg transition ${
+          className={`px-3 py-1.5 rounded-md transition ${
             activeTab === 'audit'
-              ? 'bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-300'
-              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+              ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-semibold'
+              : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
           }`}
         >
-          Journal d'audit
+          {t('users.tab_audit')}
         </button>
       </div>
 
-      {/* Content */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+      {/* Main Table Card */}
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xs overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center p-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-zinc-900 dark:border-zinc-100"></div>
           </div>
         ) : activeTab === 'users' ? (
-          <table className="w-full text-left text-xs sm:text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 dark:border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider bg-slate-50/50 dark:bg-slate-800/30">
-                <th className="py-3 px-4">Utilisateur</th>
-                <th className="py-3 px-4">Rôle</th>
-                <th className="py-3 px-4">Dernière connexion</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {users.map(u => (
-                <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                  <td className="py-3 px-4 font-semibold text-slate-900 dark:text-slate-100 flex items-center space-x-2">
-                    <Shield className="w-4 h-4 text-slate-400" />
-                    <span>{u.username}</span>
-                    {u.id === currentUser?.id && (
-                      <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-normal">
-                        (vous)
-                      </span>
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50/70 dark:bg-zinc-800/40">
+                  <th className="py-2.5 px-4">{t('users.username')}</th>
+                  <th className="py-2.5 px-4">{t('users.role')}</th>
+                  <th className="py-2.5 px-4">{t('users.last_login')}</th>
+                  <th className="py-2.5 px-4 text-right">{t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+                {users.map(u => (
+                  <tr key={u.id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30 transition">
+                    <td className="py-2.5 px-4 font-medium text-zinc-900 dark:text-zinc-100 flex items-center space-x-2">
+                      <Shield className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                      <span>{u.username}</span>
+                      {u.id === currentUser?.id && (
+                        <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-500 font-mono">
+                          (current)
+                        </span>
+                      )}
+                    </td>
 
-                  <td className="py-3 px-4">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        u.role === 'admin'
-                          ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
-                          : u.role === 'operator'
-                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                      }`}
-                    >
-                      {u.role === 'admin' ? 'Administrateur' : u.role === 'operator' ? 'Opérateur' : 'Lecteur'}
-                    </span>
-                  </td>
-
-                  <td className="py-3 px-4 text-slate-500">
-                    {u.last_login_at ? new Date(u.last_login_at).toLocaleString('fr-FR') : 'Jamais'}
-                  </td>
-
-                  <td className="py-3 px-4 text-right">
-                    {u.id !== currentUser?.id && (
-                      <button
-                        onClick={() => handleDeleteUser(u)}
-                        title="Supprimer cet utilisateur"
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition"
+                    <td className="py-2.5 px-4">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-medium ${
+                          u.role === 'admin'
+                            ? 'bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                            : u.role === 'operator'
+                            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                            : 'bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 border border-zinc-200 dark:border-zinc-700'
+                        }`}
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                        {u.role === 'admin'
+                          ? t('nav.role_admin')
+                          : u.role === 'operator'
+                          ? t('nav.role_operator')
+                          : t('nav.role_viewer')}
+                      </span>
+                    </td>
+
+                    <td className="py-2.5 px-4 text-zinc-500 font-mono text-[11px]">
+                      {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '—'}
+                    </td>
+
+                    <td className="py-2.5 px-4 text-right">
+                      <div className="flex items-center justify-end space-x-1">
+                        <button
+                          onClick={() => handleOpenEdit(u)}
+                          title={t('users.edit_user')}
+                          className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        {u.id !== currentUser?.id && (
+                          <button
+                            onClick={() => handleDeleteUser(u)}
+                            title={t('common.delete')}
+                            className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <table className="w-full text-left text-xs sm:text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 dark:border-slate-800 text-[11px] font-semibold text-slate-400 uppercase tracking-wider bg-slate-50/50 dark:bg-slate-800/30">
-                <th className="py-3 px-4">Date</th>
-                <th className="py-3 px-4">Utilisateur</th>
-                <th className="py-3 px-4">Action</th>
-                <th className="py-3 px-4">Cible</th>
-                <th className="py-3 px-4">Détails</th>
-                <th className="py-3 px-4">IP</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {auditLogs.map(log => (
-                <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
-                  <td className="py-3 px-4 text-slate-400 font-mono text-xs">
-                    {new Date(log.created_at).toLocaleString('fr-FR')}
-                  </td>
-
-                  <td className="py-3 px-4 font-semibold text-slate-800 dark:text-slate-200">
-                    {log.user_name || 'Système'}
-                  </td>
-
-                  <td className="py-3 px-4 font-mono font-bold text-xs text-brand-600 dark:text-brand-400">
-                    {log.action}
-                  </td>
-
-                  <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
-                    {log.entity_type} {log.entity_id ? `(${log.entity_id.substring(0, 8)}...)` : ''}
-                  </td>
-
-                  <td className="py-3 px-4 text-slate-500 font-mono text-[11px] max-w-xs truncate" title={JSON.stringify(log.details)}>
-                    {JSON.stringify(log.details)}
-                  </td>
-
-                  <td className="py-3 px-4 text-slate-400 text-xs font-mono">
-                    {log.ip_address || '-'}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 bg-zinc-50/70 dark:bg-zinc-800/40">
+                  <th className="py-2.5 px-4">{t('audit.date')}</th>
+                  <th className="py-2.5 px-4">{t('audit.user')}</th>
+                  <th className="py-2.5 px-4">{t('audit.action')}</th>
+                  <th className="py-2.5 px-4">{t('audit.target')}</th>
+                  <th className="py-2.5 px-4">{t('audit.details')}</th>
+                  <th className="py-2.5 px-4">{t('audit.ip')}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 font-mono text-[11px]">
+                {auditLogs.map(log => (
+                  <tr key={log.id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30 transition">
+                    <td className="py-2.5 px-4 text-zinc-400 whitespace-nowrap">
+                      {new Date(log.created_at).toLocaleString()}
+                    </td>
+                    <td className="py-2.5 px-4 font-sans font-medium text-zinc-800 dark:text-zinc-200">
+                      {log.user_name || 'System'}
+                    </td>
+                    <td className="py-2.5 px-4">
+                      <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-zinc-500">
+                      {log.entity_type}:{log.entity_id?.slice(0, 8) || '—'}
+                    </td>
+                    <td className="py-2.5 px-4 text-zinc-500 max-w-xs truncate font-sans text-xs">
+                      {log.details ? JSON.stringify(log.details) : '—'}
+                    </td>
+                    <td className="py-2.5 px-4 text-zinc-400">
+                      {log.ip_address || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -250,66 +313,126 @@ export const UsersPage: React.FC = () => {
       <Modal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        title="Créer un compte utilisateur"
+        title={t('users.add_user')}
       >
         <form onSubmit={handleCreateUser} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
-              Nom d'utilisateur
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              {t('users.username')}
             </label>
             <input
               type="text"
               required
-              minLength={3}
               value={newUsername}
               onChange={e => setNewUsername(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100"
+              className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+              placeholder="e.g. dev_operator"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
-              Mot de passe
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              {t('users.password')}
             </label>
             <input
               type="password"
               required
-              minLength={8}
               value={newPassword}
               onChange={e => setNewPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100"
+              className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+              placeholder="••••••••••••"
             />
+            <p className="text-[11px] text-zinc-400 mt-1">
+              Min. 10 chars (1 uppercase, 1 lowercase, 1 digit)
+            </p>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
-              Rôle
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              {t('users.role')}
             </label>
             <select
               value={newRole}
               onChange={e => setNewRole(e.target.value as any)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-slate-100"
+              className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             >
-              <option value="operator">Opérateur (téléversement, publication, édition)</option>
-              <option value="admin">Administrateur (contrôle total & gestion des utilisateurs)</option>
-              <option value="viewer">Lecteur (lecture seule des manifestes et versions)</option>
+              <option value="operator">{t('nav.role_operator')}</option>
+              <option value="admin">{t('nav.role_admin')}</option>
+              <option value="viewer">{t('nav.role_viewer')}</option>
             </select>
           </div>
 
-          <div className="pt-4 flex justify-end space-x-2">
+          <div className="flex justify-end space-x-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
             <button
               type="button"
               onClick={() => setCreateModalOpen(false)}
-              className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-600 dark:text-slate-300"
+              className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 rounded-lg transition"
             >
-              Annuler
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm rounded-lg shadow disabled:opacity-60"
+              className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-white transition disabled:opacity-50"
             >
-              {submitting ? 'Création...' : 'Créer le compte'}
+              {t('common.create')}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit User Modal */}
+      <Modal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title={`${t('users.edit_user')} (${editingUser?.username})`}
+      >
+        <form onSubmit={handleSaveEdit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              {t('users.role')}
+            </label>
+            <select
+              value={editRole}
+              onChange={e => setEditRole(e.target.value as any)}
+              className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+            >
+              <option value="operator">{t('nav.role_operator')}</option>
+              <option value="admin">{t('nav.role_admin')}</option>
+              <option value="viewer">{t('nav.role_viewer')}</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+              {t('users.password')}
+            </label>
+            <input
+              type="password"
+              value={editPassword}
+              onChange={e => setEditPassword(e.target.value)}
+              className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
+              placeholder="••••••••••••"
+            />
+            <p className="text-[11px] text-zinc-400 mt-1">
+              {t('users.leave_blank')}
+            </p>
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <button
+              type="button"
+              onClick={() => setEditModalOpen(false)}
+              className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 rounded-lg transition"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-white transition disabled:opacity-50"
+            >
+              {t('common.save')}
             </button>
           </div>
         </form>

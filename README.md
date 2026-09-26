@@ -50,12 +50,19 @@ It replaces the legacy practice of dynamic PHP scripts that scan directories and
   - Instant one-click rollback by swapping the manifest pointer atomically (`index.php.tmp` -> `index.php`).
   - Visual release diff inspection (files added, modified, removed).
   - Version pinning to prevent automated garbage collection retention purges.
-- **Security & Multi-Tenancy**:
+- **Security & Rate Limiting**:
   - Password hashing with **Argon2id**.
   - Dual session resilience: `HttpOnly` cookies + `Authorization: Bearer` support.
+  - Anti-brute-force rate limiting: sliding window lock with HTTP 429 and `Retry-After`.
+  - OWASP password complexity enforcement with automatic session revocation upon credential changes.
   - Role-Based Access Control (**Admin**, **Operator**, **Viewer**).
   - Complete, tamper-evident audit logging for all management operations.
   - Rejection of directory traversal attacks (`../`, `..\`) and Windows-incompatible reserved names (`CON`, `PRN`, `AUX`, `NUL`, etc.).
+- **Modern Sober UI & Internationalization (i18n)**:
+  - English & French multilingual support with live language switcher and extensible dictionary structure.
+  - First-run interactive **Setup Wizard** guiding administrators through domain configuration, security hardening, and initial endpoint setup.
+  - High-density, professional UI design inspired by Linear and Vercel standards (slate/zinc palette, fine borders, responsive layouts, tailored SVG vector identity).
+  - User management modal for role modifications, credential rotations, and active session invalidation.
 
 ---
 

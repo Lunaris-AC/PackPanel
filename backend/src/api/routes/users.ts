@@ -32,6 +32,12 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     const { username, password, role } = parsed.data;
 
+    if (!(/[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password))) {
+      return reply.status(400).send({
+        error: 'Le mot de passe doit comporter au moins 1 majuscule, 1 minuscule et 1 chiffre.'
+      });
+    }
+
     const existing = await query('SELECT id FROM users WHERE username = $1', [username]);
     if (existing.rows.length > 0) {
       return reply.status(400).send({ error: `L'utilisateur "${username}" existe déjà` });
@@ -56,7 +62,7 @@ export async function userRoutes(fastify: FastifyInstance) {
     const { id } = req.params as { id: string };
     const schema = z.object({
       role: z.enum(['admin', 'operator', 'viewer']).optional(),
-      password: z.string().min(8).max(128).optional()
+      password: z.string().min(10).max(128).optional()
     });
 
     const parsed = schema.safeParse(req.body);
@@ -68,7 +74,14 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     let passwordHash: string | null = null;
     if (password) {
+      if (!(/[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password))) {
+        return reply.status(400).send({
+          error: 'Le mot de passe doit comporter au moins 1 majuscule, 1 minuscule et 1 chiffre.'
+        });
+      }
       passwordHash = await hashPassword(password);
+      // Invalidate existing sessions for security
+      await query('DELETE FROM sessions WHERE user_id = $1', [id]);
     }
 
     const res = await query(
