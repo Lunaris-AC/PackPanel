@@ -1,0 +1,103 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.userRoutes = userRoutes;
+const zod_1 = require("zod");
+const db_1 = require("../../db");
+const middleware_1 = require("../../auth/middleware");
+const argon2_1 = require("../../auth/argon2");
+async function userRoutes(fastify) {
+    fastify.addHook('preHandler', middleware_1.authenticateRequest);
+    // 1. List users (Admin only)
+    fastify.get('/users', { preHandler: [(0, middleware_1.requireRole)(['admin'])] }, async (req, reply) => {
+        const res = await (0, db_1.query)(`SELECT id, username, role, created_at, last_login_at
+       FROM users
+       ORDER BY created_at ASC`);
+        return reply.send({ users: res.rows });
+    });
+    // 2. Create user (Admin only)
+    fastify.post('/users', { preHandler: [(0, middleware_1.requireRole)(['admin'])] }, async (req, reply) => {
+        const schema = zod_1.z.object({
+            username: zod_1.z.string().min(3).max(64),
+            password: zod_1.z.string().min(8).max(128),
+            role: zod_1.z.enum(['admin', 'operator', 'viewer']).default('operator')
+        });
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) {
+            return reply.status(400).send({ error: parsed.error.issues[0].message });
+        }
+        const { username, password, role } = parsed.data;
+        const existing = await (0, db_1.query)('SELECT id FROM users WHERE username = $1', [username]);
+        if (existing.rows.length > 0) {
+            return reply.status(400).send({ error: `L'utilisateur "${username}" existe déjà` });
+        }
+        const passwordHash = await (0, argon2_1.hashPassword)(password);
+        const res = await (0, db_1.query)(`INSERT INTO users (username, password_hash, role)
+       VALUES ($1, $2, $3)
+       RETURNING id, username, role, created_at`, [username, passwordHash, role]);
+        const newUser = res.rows[0];
+        await (0, middleware_1.recordAuditLog)(req.user.userId, 'create', 'user', newUser.id, { username, role }, req.ip);
+        return reply.status(201).send({ user: newUser });
+    });
+    // 3. Update user (Admin only)
+    fastify.put('/users/:id', { preHandler: [(0, middleware_1.requireRole)(['admin'])] }, async (req, reply) => {
+        const { id } = req.params;
+        const schema = zod_1.z.object({
+            role: zod_1.z.enum(['admin', 'operator', 'viewer']).optional(),
+            password: zod_1.z.string().min(8).max(128).optional()
+        });
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) {
+            return reply.status(400).send({ error: parsed.error.issues[0].message });
+        }
+        const { role, password } = parsed.data;
+        let passwordHash = null;
+        if (password) {
+            passwordHash = await (0, argon2_1.hashPassword)(password);
+        }
+        const res = await (0, db_1.query)(`UPDATE users
+       SET role = COALESCE($1, role),
+           password_hash = COALESCE($2, password_hash),
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING id, username, role, updated_at`, [role, passwordHash, id]);
+        if (res.rows.length === 0) {
+            return reply.status(404).send({ error: 'Utilisateur introuvable' });
+        }
+        await (0, middleware_1.recordAuditLog)(req.user.userId, 'update', 'user', id, { role, passwordChanged: !!password }, req.ip);
+        return reply.send({ user: res.rows[0] });
+    });
+    // 4. Delete user (Admin only)
+    fastify.delete('/users/:id', { preHandler: [(0, middleware_1.requireRole)(['admin'])] }, async (req, reply) => {
+        const { id } = req.params;
+        if (id === req.user.userId) {
+            return reply.status(400).send({ error: 'Impossible de supprimer votre propre compte' });
+        }
+        // Check if it's the last admin
+        const adminsCount = await (0, db_1.query)(`SELECT COUNT(*) FROM users WHERE role = 'admin'`);
+        const targetUser = await (0, db_1.query)(`SELECT role, username FROM users WHERE id = $1`, [id]);
+        if (targetUser.rows.length === 0) {
+            return reply.status(404).send({ error: 'Utilisateur introuvable' });
+        }
+        if (targetUser.rows[0].role === 'admin' && parseInt(adminsCount.rows[0].count, 10) <= 1) {
+            return reply.status(400).send({ error: 'Impossible de supprimer le dernier administrateur' });
+        }
+        await (0, db_1.query)('DELETE FROM users WHERE id = $1', [id]);
+        await (0, middleware_1.recordAuditLog)(req.user.userId, 'delete', 'user', id, { username: targetUser.rows[0].username }, req.ip);
+        return reply.send({ success: true });
+    });
+    // 5. Audit logs (Admin only)
+    fastify.get('/audit-logs', { preHandler: [(0, middleware_1.requireRole)(['admin'])] }, async (req, reply) => {
+        const { limit = 50, offset = 0 } = req.query;
+        const res = await (0, db_1.query)(`SELECT a.*, u.username as user_name
+       FROM audit_logs a
+       LEFT JOIN users u ON u.id = a.user_id
+       ORDER BY a.created_at DESC
+       LIMIT $1 OFFSET $2`, [Math.min(Number(limit) || 50, 100), Number(offset) || 0]);
+        const countRes = await (0, db_1.query)('SELECT COUNT(*) FROM audit_logs');
+        return reply.send({
+            total: parseInt(countRes.rows[0].count, 10),
+            logs: res.rows
+        });
+    });
+}
+//# sourceMappingURL=users.js.map
