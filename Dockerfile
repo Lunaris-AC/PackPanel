@@ -3,7 +3,7 @@ WORKDIR /app
 
 # Install backend dependencies
 COPY backend/package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy backend source & compile TypeScript
 COPY backend/tsconfig.json ./
