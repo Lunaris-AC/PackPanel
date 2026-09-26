@@ -152,10 +152,18 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
       fs.writeFileSync(releaseManifestCompatPath, mJson, 'utf8');
     }
 
+    // Snapshot game configuration from instance if linked
+    const instCheck = await client.query(
+      `SELECT minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies
+       FROM instances WHERE endpoint_id = $1 LIMIT 1`,
+      [endpointId]
+    );
+    const gameConfig = instCheck.rows.length > 0 ? instCheck.rows[0] : {};
+
     // Insert release into database
     const relRes = await client.query(
-      `INSERT INTO releases (endpoint_id, release_id, version_num, status, is_active, is_pinned, created_by_user_id, manifest_content, total_files, total_bytes)
-       VALUES ($1, $2, $3, 'draft', FALSE, FALSE, $4, $5, $6, $7)
+      `INSERT INTO releases (endpoint_id, release_id, version_num, status, is_active, is_pinned, created_by_user_id, manifest_content, total_files, total_bytes, game_config)
+       VALUES ($1, $2, $3, 'draft', FALSE, FALSE, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         endpointId,
@@ -164,7 +172,8 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
         session.user_id,
         JSON.stringify(manifestData),
         filesMap.size,
-        totalBytes
+        totalBytes,
+        JSON.stringify(gameConfig)
       ]
     );
     const newReleaseId = relRes.rows[0].id;

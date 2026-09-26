@@ -23,16 +23,18 @@ import { PackPanelLogo } from './Logo';
 import { SetupWizard } from './SetupWizard';
 import { TwoFactorModal } from './TwoFactorModal';
 
+import { useLocation, useNavigate } from 'react-router-dom';
+
 interface LayoutProps {
-  currentTab: string;
-  onNavigate: (tab: string, meta?: any) => void;
   children: React.ReactNode;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children }) => {
+export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { language, setLanguage, t } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [sseConnected, setSseConnected] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -63,13 +65,11 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
   }, [user]);
 
   const navItems = [
-    { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
-    { id: 'instances', label: language === 'fr' ? 'Instances Minecraft' : 'Minecraft Instances', icon: Box },
-    { id: 'launchers', label: language === 'fr' ? 'Launchers' : 'Launchers', icon: Monitor },
-    { id: 'endpoints', label: t('nav.endpoints'), icon: Server },
-    { id: 'jobs', label: t('nav.jobs'), icon: Activity },
+    { id: 'dashboard', path: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
+    { id: 'instances', path: '/instances', label: language === 'fr' ? 'Instances Minecraft' : 'Minecraft Instances', icon: Box },
+    { id: 'jobs', path: '/jobs', label: t('nav.jobs'), icon: Activity },
     ...(user?.role === 'admin'
-      ? [{ id: 'users', label: t('nav.users'), icon: Users }]
+      ? [{ id: 'users', path: '/users', label: t('nav.users'), icon: Users }]
       : [])
   ];
 
@@ -104,12 +104,12 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
         <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
           {navItems.map(item => {
             const Icon = item.icon;
-            const active = currentTab === item.id || currentTab.startsWith(`${item.id}:`);
+            const active = location.pathname.startsWith(item.path);
             return (
               <button
                 key={item.id}
                 onClick={() => {
-                  onNavigate(item.id);
+                  navigate(item.path);
                   setMobileMenuOpen(false);
                 }}
                 className={`w-full flex items-center px-3 py-2 rounded-lg text-xs font-medium transition ${
@@ -192,7 +192,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
               <span className="font-medium text-zinc-700 dark:text-zinc-300">PackPanel</span>
               <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
               <span className="font-semibold text-zinc-900 dark:text-zinc-100 capitalize">
-                {currentTab.split(':')[0]}
+                {location.pathname.split('/')[1] || 'instances'}
               </span>
             </div>
           </div>
@@ -246,7 +246,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onNavigate, children
         onClose={() => setSetupWizardOpen(false)}
         onComplete={(slug) => {
           if (slug) {
-            onNavigate('endpoints');
+            navigate('/instances');
           } else {
             window.location.reload();
           }

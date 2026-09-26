@@ -114,6 +114,40 @@ export async function versionRoutes(fastify: FastifyInstance) {
 
     await publishReleaseInternal(endpointId, targetRelease.id, endpointSlug, manifestJson, releaseDir);
 
+    // Restore instance settings snapshot if available
+    if (targetRelease.game_config && typeof targetRelease.game_config === 'object') {
+      const gc = typeof targetRelease.game_config === 'string'
+        ? JSON.parse(targetRelease.game_config)
+        : targetRelease.game_config;
+
+      if (gc.minecraft_version) {
+        await query(
+          `UPDATE instances
+           SET minecraft_version = COALESCE($1, minecraft_version),
+               loader_type = COALESCE($2, loader_type),
+               loader_version = COALESCE($3, loader_version),
+               java_version = COALESCE($4, java_version),
+               java_args = COALESCE($5, java_args),
+               server_address = COALESCE($6, server_address),
+               server_name = COALESCE($7, server_name),
+               file_policies = COALESCE($8, file_policies),
+               updated_at = NOW()
+           WHERE endpoint_id = $9`,
+          [
+            gc.minecraft_version ?? null,
+            gc.loader_type ?? null,
+            gc.loader_version ?? null,
+            gc.java_version ?? null,
+            gc.java_args ?? null,
+            gc.server_address ?? null,
+            gc.server_name ?? null,
+            gc.file_policies ? JSON.stringify(gc.file_policies) : null,
+            endpointId
+          ]
+        );
+      }
+    }
+
     await recordAuditLog(req.user!.userId, 'rollback', 'endpoint', endpointId, {
       targetReleaseId: targetRelease.release_id,
       targetReleaseDbId: targetRelease.id

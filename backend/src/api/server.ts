@@ -14,6 +14,7 @@ import { statsRoutes } from './routes/stats';
 import { userRoutes } from './routes/users';
 import { instanceRoutes } from './routes/instances';
 import { launcherRoutes } from './routes/launchers';
+import { catalogRoutes } from './routes/catalog';
 
 import { authenticateRequest, enforceOriginCheck, isAllowedOrigin } from '../auth/middleware';
 
@@ -91,6 +92,7 @@ async function main() {
   await server.register(userRoutes, { prefix: '/api' });
   await server.register(instanceRoutes, { prefix: '/api/v2' });
   await server.register(launcherRoutes, { prefix: '/api/v2' });
+  await server.register(catalogRoutes, { prefix: '/api/v2' });
 
   // Custom global error handler
   server.setErrorHandler((error, request, reply) => {

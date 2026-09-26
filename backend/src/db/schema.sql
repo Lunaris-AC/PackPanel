@@ -281,3 +281,8 @@ CREATE TABLE IF NOT EXISTS launcher_builds (
 );
 CREATE INDEX IF NOT EXISTS idx_launcher_builds_project ON launcher_builds(launcher_project_id, created_at DESC);
 
+-- Instance-Centric V3 Enhancements
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS game_config JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE instances ADD COLUMN IF NOT EXISTS launcher_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE instances ADD COLUMN IF NOT EXISTS launcher_project_id UUID REFERENCES launcher_projects(id) ON DELETE SET NULL;
+

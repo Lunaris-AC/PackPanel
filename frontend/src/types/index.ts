@@ -141,3 +141,94 @@ export interface FileHistoryItem {
   created_at: string;
 }
 
+export type LoaderType = 'vanilla' | 'forge' | 'neoforge' | 'fabric' | 'quilt';
+
+export interface MinecraftInstance {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  icon_url?: string;
+  minecraft_version: string;
+  loader_type: LoaderType;
+  loader_version?: string;
+  java_version: number;
+  java_args?: string;
+  server_address?: string;
+  server_name?: string;
+  file_policies?: any;
+  endpoint_id?: string;
+  endpoint_slug?: string;
+  endpoint_name?: string;
+  launcher_enabled?: boolean;
+  launcher_project_id?: string;
+  launcher_title?: string;
+  launcher_template?: 'minimal' | 'community' | 'network';
+  launcher_accent_color?: string;
+  active_release_id?: string | null;
+  active_total_files?: number | null;
+  active_total_bytes?: number | null;
+  manifest_url?: string | null;
+  created_at: string;
+  updated_at?: string;
+  activeRelease?: Release | null;
+  pendingChangesCount?: number;
+  hasDraftConfigChanges?: boolean;
+  launcher?: LauncherProjectWithBuilds | null;
+}
+
+export interface LauncherBuild {
+  id: string;
+  launcher_project_id: string;
+  target_os: 'windows' | 'linux' | 'macos' | 'all';
+  version: string;
+  artifact_path?: string;
+  artifact_size?: number;
+  sha256?: string;
+  status: 'pending' | 'building' | 'completed' | 'failed';
+  error_message?: string;
+  created_by_username?: string;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface LauncherProjectWithBuilds {
+  id: string;
+  name: string;
+  slug: string;
+  title: string;
+  template: 'minimal' | 'community' | 'network';
+  accent_color: string;
+  background_url?: string;
+  logo_url?: string;
+  icon_url?: string;
+  auth_microsoft: boolean;
+  auth_offline: boolean;
+  discord_url?: string;
+  website_url?: string;
+  builds?: LauncherBuild[];
+}
+
+export interface MinecraftVersionSummary {
+  id: string;
+  type: 'release' | 'snapshot' | 'old_beta' | 'old_alpha';
+  releaseTime: string;
+}
+
+export interface LoaderCompatibilitySummary {
+  loader: LoaderType;
+  supported: boolean;
+  recommendedVersion?: string;
+  latestVersion?: string;
+}
+
+export interface LoaderVersionEntry {
+  version: string;
+  stable: boolean;
+}
+
+export interface JavaRequirement {
+  majorVersion: number;
+  jvmArgs: string[];
+}
+
