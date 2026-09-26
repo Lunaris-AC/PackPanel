@@ -99,8 +99,8 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
       });
     }
 
-    if (filesMap.size === 0) {
-      throw new Error(`Garde-fou : la version résultante est entièrement vide. Publication annulée.`);
+    if (filesMap.size === 0 && activeRelease) {
+      throw new Error(`Garde-fou : la version résultante est entièrement vide alors qu'une version précédente existait. Publication annulée.`);
     }
 
     // Create physical release directory: <DATA_DIR>/storage/endpoints/<slug>/releases/<release_id>/
