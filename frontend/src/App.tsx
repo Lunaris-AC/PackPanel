@@ -1,3 +1,4 @@
+import { useTranslation } from './i18n';
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
@@ -50,6 +51,7 @@ const AuthenticatedApp: React.FC = () => {
 };
 
 export const AppContent: React.FC = () => {
+  const { tr } = useTranslation();
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -57,7 +59,7 @@ export const AppContent: React.FC = () => {
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="flex flex-col items-center space-y-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-          <span className="text-xs text-zinc-400 font-medium">Chargement de PackPanel...</span>
+          <span className="text-xs text-zinc-400 font-medium">{tr("Chargement de PackPanel...")}</span>
         </div>
       </div>
     );

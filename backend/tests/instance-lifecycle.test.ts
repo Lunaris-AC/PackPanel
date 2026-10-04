@@ -69,7 +69,7 @@ describe('Instance-Centric Architecture & Catalog Tests', () => {
             accent_color: '#6366f1',
             auth_microsoft: true,
             auth_offline: true,
-            distribution_fqdn: 'mccdn.inferi.fr'
+            distribution_fqdn: 'cdn.example.com'
           }]
         } as any;
       }

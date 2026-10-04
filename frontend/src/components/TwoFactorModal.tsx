@@ -22,7 +22,7 @@ interface TwoFactorModalProps {
 
 export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({ isOpen, onClose }) => {
   const { user, refreshUser } = useAuth();
-  const { language } = useTranslation();
+  const { tr, language } = useTranslation();
 
   const [loading, setLoading] = useState(false);
   const [setupData, setSetupData] = useState<{
@@ -64,7 +64,7 @@ export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({ isOpen, onClose 
         recoveryCodes: res.recoveryCodes
       });
     } catch (err: any) {
-      setError(err.message || 'Impossible de générer le secret 2FA');
+      setError(err.message || tr("Impossible de générer le secret 2FA"));
     } finally {
       setLoading(false);
     }
@@ -145,7 +145,7 @@ export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({ isOpen, onClose 
         onClose();
       }, 1500);
     } catch (err: any) {
-      setError(err.message || (language === 'fr' ? 'Mot de passe incorrect' : 'Incorrect password'));
+      setError(err.message || (language === 'fr' ? tr("Mot de passe incorrect") : 'Incorrect password'));
     } finally {
       setLoading(false);
     }
@@ -276,7 +276,7 @@ export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({ isOpen, onClose 
                         className="inline-flex items-center space-x-1 text-[11px] text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white"
                       >
                         {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedKey ? (language === 'fr' ? 'Copié' : 'Copied') : (language === 'fr' ? 'Copier' : 'Copy')}</span>
+                        <span>{copiedKey ? (language === 'fr' ? 'Copié' : 'Copied') : (language === 'fr' ? tr("Copier") : 'Copy')}</span>
                       </button>
                     </div>
                     <code className="text-sm font-mono font-bold tracking-wider text-zinc-900 dark:text-zinc-100 select-all block break-all">
@@ -297,7 +297,7 @@ export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({ isOpen, onClose 
                           className="inline-flex items-center space-x-1 text-[10px] text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
                         >
                           {copiedCodes ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                          <span>{language === 'fr' ? 'Copier' : 'Copy'}</span>
+                          <span>{language === 'fr' ? tr("Copier") : 'Copy'}</span>
                         </button>
                         <button
                           type="button"

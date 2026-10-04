@@ -145,6 +145,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     return reply.send({
       user: {
         ...req.user,
+        id: u.id,
         totp_enabled: u.totp_enabled
       }
     });

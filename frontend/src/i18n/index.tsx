@@ -1,12 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { translateMessage, selectedLanguage, Language, Values } from './text';
+export { translateText, translateMessage } from './text';
+export type { Language } from './text';
 
-export type Language = 'fr' | 'en';
 
 export interface Translations {
   [key: string]: string | Translations;
 }
 
-const translations: Record<Language, Translations> = {
+export const translations: Record<Language, Translations> = {
   fr: {
     nav: {
       dashboard: 'Tableau de bord',
@@ -255,20 +257,23 @@ interface I18nContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
   t: (path: string) => string;
+  tr: (source: string, values?: Values) => string;
 }
 
 const I18nContext = createContext<I18nContextType>({
   language: 'fr',
   setLanguage: () => {},
-  t: (path) => path
+  t: (path) => path,
+  tr: (source) => source
 });
 
 export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [language, setLanguageState] = useState<Language>(() => {
-    const saved = localStorage.getItem('packpanel_lang') as Language;
-    if (saved && (saved === 'fr' || saved === 'en')) return saved;
-    return navigator.language.startsWith('fr') ? 'fr' : 'en';
-  });
+  const [language, setLanguageState] = useState<Language>(selectedLanguage);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.title = language === 'fr' ? 'PackPanel — Administration des modpacks' : 'PackPanel — Modpack administration';
+  }, [language]);
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
@@ -298,7 +303,7 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <I18nContext.Provider value={{ language, setLanguage, t }}>
+    <I18nContext.Provider value={{ language, setLanguage, t, tr: (source, values) => translateMessage(source, language, values) }}>
       {children}
     </I18nContext.Provider>
   );

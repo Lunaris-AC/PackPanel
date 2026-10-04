@@ -1,3 +1,4 @@
+import { locale } from '../i18n/format';
 import React, { useEffect, useState } from 'react';
 import {
   Users,
@@ -19,7 +20,7 @@ import { useTranslation } from '../i18n';
 export const UsersPage: React.FC = () => {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
-  const { t } = useTranslation();
+  const { tr, t } = useTranslation();
 
   const [activeTab, setActiveTab] = useState<'users' | 'audit'>('users');
   const [users, setUsers] = useState<User[]>([]);
@@ -80,7 +81,7 @@ export const UsersPage: React.FC = () => {
     if (!newUsername.trim() || !newPassword) return;
 
     if (newPassword.length < 10 || !/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
-      toast.error('Le mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre.');
+      toast.error(tr("Le mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre."));
       return;
     }
 
@@ -136,7 +137,7 @@ export const UsersPage: React.FC = () => {
     if (!editingUser) return;
 
     if (editPassword && (editPassword.length < 10 || !/[A-Z]/.test(editPassword) || !/[a-z]/.test(editPassword) || !/[0-9]/.test(editPassword))) {
-      toast.error('Le nouveau mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre.');
+      toast.error(tr("Le nouveau mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre."));
       return;
     }
 
@@ -262,8 +263,7 @@ export const UsersPage: React.FC = () => {
                       <span>{u.username}</span>
                       {u.id === currentUser?.id && (
                         <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-500 font-mono">
-                          (current)
-                        </span>
+                          {tr("(current)")} </span>
                       )}
                     </td>
 
@@ -289,7 +289,7 @@ export const UsersPage: React.FC = () => {
                       {u.totp_enabled ? (
                         <span className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 font-mono text-[11px]">
                           <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Active</span>
+                          <span>{tr("Active")}</span>
                         </span>
                       ) : (
                         <span className="text-zinc-400 font-mono text-[11px]">—</span>
@@ -297,7 +297,7 @@ export const UsersPage: React.FC = () => {
                     </td>
 
                     <td className="py-2.5 px-4 text-zinc-500 font-mono text-[11px]">
-                      {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '—'}
+                      {u.last_login_at ? new Date(u.last_login_at).toLocaleString(locale()) : '—'}
                     </td>
 
                     <td className="py-2.5 px-4 text-right">
@@ -342,10 +342,10 @@ export const UsersPage: React.FC = () => {
                 {auditLogs.map(log => (
                   <tr key={log.id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30 transition">
                     <td className="py-2.5 px-4 text-zinc-400 whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleString()}
+                      {new Date(log.created_at).toLocaleString(locale())}
                     </td>
                     <td className="py-2.5 px-4 font-sans font-medium text-zinc-800 dark:text-zinc-200">
-                      {log.user_name || 'System'}
+                      {log.user_name || tr("System")}
                     </td>
                     <td className="py-2.5 px-4">
                       <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
@@ -403,8 +403,7 @@ export const UsersPage: React.FC = () => {
               placeholder="••••••••••••"
             />
             <p className="text-[11px] text-zinc-400 mt-1">
-              Min. 10 chars (1 uppercase, 1 lowercase, 1 digit)
-            </p>
+              {tr("Min. 10 chars (1 uppercase, 1 lowercase, 1 digit)")} </p>
           </div>
 
           <div>
@@ -500,8 +499,7 @@ export const UsersPage: React.FC = () => {
               </div>
             ) : userPermissions.length === 0 ? (
               <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/60 text-[11px] text-zinc-400">
-                Aucun endpoint disponible pour la configuration.
-              </div>
+                {tr("Aucun endpoint disponible pour la configuration.")} </div>
             ) : (
               <div className="max-h-48 overflow-y-auto border border-zinc-200 dark:border-zinc-800 rounded-lg divide-y divide-zinc-100 dark:divide-zinc-800">
                 {userPermissions.map(p => (

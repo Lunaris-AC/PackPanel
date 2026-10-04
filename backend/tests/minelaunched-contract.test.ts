@@ -18,7 +18,7 @@ describe('MineLaunched Contract Verification', () => {
       input,
       'testpack',
       'r0001',
-      'mccdn.internal',
+      'cdn.example.com',
       ['mods', 'config']
     );
 
@@ -36,13 +36,13 @@ describe('MineLaunched Contract Verification', () => {
     const configDirEntry = manifest.find((entry: any) => entry.path === 'config/');
     expect(configDirEntry).toBeDefined();
     expect(configDirEntry.checksumSHA1).toBe(false);
-    expect(configDirEntry.url).toBe('https://mccdn.internal/testpack/releases/r0001/config/');
+    expect(configDirEntry.url).toBe('https://cdn.example.com/testpack/releases/r0001/config/');
 
     // 4. File entry must have 40-char lowercase hex checksumSHA1
     const fileEntry = manifest.find((entry: any) => entry.path === 'mods/jei.jar');
     expect(fileEntry).toBeDefined();
     expect(fileEntry.checksumSHA1).toBe('1234567890abcdef1234567890abcdef12345678');
-    expect(fileEntry.url).toBe('https://mccdn.internal/testpack/releases/r0001/mods/jei.jar');
+    expect(fileEntry.url).toBe('https://cdn.example.com/testpack/releases/r0001/mods/jei.jar');
 
     // 5. Cleanup directives must be at the very end as separate objects
     const lastTwo = manifest.slice(-2);
@@ -61,7 +61,7 @@ describe('MineLaunched Contract Verification', () => {
       input,
       'slug_spec',
       'r0002',
-      'mccdn.internal',
+      'cdn.example.com',
       ['mods']
     );
 
@@ -77,7 +77,7 @@ describe('MineLaunched Contract Verification', () => {
       {
         path: 'mods/test.jar',
         checksumSHA1: 'DA39A3EE5E6B4B0D3255BFEF95601890AFD80709', // uppercase
-        url: 'https://mccdn.internal/p/releases/r1/mods/test.jar'
+        url: 'https://cdn.example.com/p/releases/r1/mods/test.jar'
       }
     ];
 

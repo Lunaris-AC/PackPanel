@@ -11,15 +11,15 @@ interface SetupWizardProps {
 }
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onComplete }) => {
-  const { t } = useTranslation();
+  const { tr, t } = useTranslation();
   const { toast } = useToast();
 
   const [step, setStep] = useState<number>(1);
   const [submitting, setSubmitting] = useState(false);
 
   // Form states
-  const [filesFqdn, setFilesFqdn] = useState('mccdn.inferi.fr');
-  const [adminFqdn, setAdminFqdn] = useState('panel.mccdn.internal');
+  const [filesFqdn, setFilesFqdn] = useState('cdn.example.com');
+  const [adminFqdn, setAdminFqdn] = useState('panel.example.com');
   const [newPassword, setNewPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [filesBaseUrl, setFilesBaseUrl] = useState<string | undefined>();
@@ -40,13 +40,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
 
   const handleNext = async () => {
     if (step === 2 && newPassword) {
-      if (!currentPassword) { toast.error('Saisissez votre mot de passe actuel.'); return; }
+      if (!currentPassword) { toast.error(tr("Saisissez votre mot de passe actuel.")); return; }
       if (!validatePassword(newPassword)) {
-        toast.error('Le mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre.');
+        toast.error(tr("Le mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre."));
         return;
       }
       if (newPassword !== confirmPassword) {
-        toast.error('Les mots de passe ne correspondent pas.');
+        toast.error(tr("Les mots de passe ne correspondent pas."));
         return;
       }
     }
@@ -145,7 +145,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
                     value={filesFqdn}
                     onChange={e => setFilesFqdn(e.target.value)}
                     className="w-full px-3 py-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    placeholder="mccdn.inferi.fr"
+                    placeholder="cdn.example.com"
                   />
                 </div>
 
@@ -158,7 +158,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
                     value={adminFqdn}
                     onChange={e => setAdminFqdn(e.target.value)}
                     className="w-full px-3 py-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
-                    placeholder="panel.mccdn.internal"
+                    placeholder="panel.example.com"
                   />
                 </div>
               </div>
@@ -168,8 +168,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
           {step === 2 && (
             <>
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-              Mot de passe actuel (si vous souhaitez le modifier)
-              <input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="mt-1 w-full p-2 border border-zinc-300 dark:border-zinc-700 rounded bg-transparent" />
+              {tr("Mot de passe actuel (si vous souhaitez le modifier)")} <input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="mt-1 w-full p-2 border border-zinc-300 dark:border-zinc-700 rounded bg-transparent" />
             </label>
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center space-x-2 text-zinc-900 dark:text-zinc-100 font-semibold text-sm">
@@ -199,8 +198,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
 
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                    Confirmer le mot de passe
-                  </label>
+                    {tr("Confirmer le mot de passe")} </label>
                   <input
                     type="password"
                     value={confirmPassword}
@@ -292,7 +290,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
                 onClick={handleNext}
                 className="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-white transition"
               >
-                <span>Suivant</span>
+                <span>{tr("Suivant")}</span>
                 <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
               </button>
             ) : (

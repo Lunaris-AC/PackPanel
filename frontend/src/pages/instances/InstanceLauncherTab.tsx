@@ -1,3 +1,4 @@
+import { formatBytes, locale } from '../../i18n/format';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Monitor,
@@ -29,17 +30,11 @@ interface InstanceLauncherTabProps {
   onRefresh: () => void;
 }
 
-function formatBytes(bytes?: number | null) {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'Ko', 'Mo', 'Go', 'To'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
+
 
 export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instance, onRefresh }) => {
   const { toast } = useToast();
-  const { language } = useTranslation();
+  const { tr, language } = useTranslation();
   const text = (fr: string, en: string) => language === 'fr' ? fr : en;
   const [loading, setLoading] = useState(false);
   const [building, setBuilding] = useState(false);
@@ -95,24 +90,24 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
     try {
       setLoading(true);
       await api.post(`/v2/instances/${instance.id}/launcher/enable`);
-      toast.success('Launcher personnalisé activé pour cette instance !');
+      toast.success(tr("Launcher personnalisé activé pour cette instance !"));
       onRefresh();
     } catch (err: any) {
-      toast.error(err.message || "Erreur lors de l'activation du launcher");
+      toast.error(err.message || tr("Erreur lors de l'activation du launcher"));
     } finally {
       setLoading(false);
     }
   };
 
   const handleDisableLauncher = async () => {
-    if (!window.confirm('Désactiver le launcher pour cette instance ?')) return;
+    if (!window.confirm(tr("Désactiver le launcher pour cette instance ?"))) return;
     try {
       setLoading(true);
       await api.post(`/v2/instances/${instance.id}/launcher/disable`);
-      toast.success('Launcher désactivé');
+      toast.success(tr("Launcher désactivé"));
       onRefresh();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur');
+      toast.error(err.message || tr("Erreur"));
     } finally {
       setLoading(false);
     }
@@ -135,9 +130,9 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
       } else {
         setBackgroundUrl(res.url);
       }
-      toast.success(`Image ${type === 'logo' ? 'Logo' : 'Arrière-plan'} téléversée avec succès dans le CAS !`);
+      toast.success(tr("Image {0} téléversée avec succès dans le CAS !", { 0: type === 'logo' ? 'Logo' : 'Arrière-plan' }));
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors du téléversement');
+      toast.error(err.message || tr("Erreur lors du téléversement"));
     } finally {
       if (type === 'logo') setUploadingLogo(false);
       else setUploadingBg(false);
@@ -159,10 +154,10 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
         discordUrl: discordUrl || null,
         websiteUrl: websiteUrl || null
       });
-      toast.success('Paramètres du launcher enregistrés !');
+      toast.success(tr("Paramètres du launcher enregistrés !"));
       onRefresh();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de l’enregistrement');
+      toast.error(err.message || tr("Erreur lors de l’enregistrement"));
     } finally {
       setLoading(false);
     }
@@ -171,15 +166,15 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
   const handleTriggerBuild = async () => {
     try {
       setBuilding(true);
-      toast.info('Génération de l’exécutable launcher en cours...');
+      toast.info(tr("Génération de l’exécutable launcher en cours..."));
       const res = await api.post<{ success: boolean; build: LauncherBuild }>(
         `/v2/instances/${instance.id}/launcher/build`,
         { targetOs }
       );
-      toast.success(`Build ${res.build.version} généré avec succès !`);
+      toast.success(tr("Build {0} généré avec succès !", { 0: res.build.version }));
       loadBuilds();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de la génération du launcher');
+      toast.error(err.message || tr("Erreur lors de la génération du launcher"));
     } finally {
       setBuilding(false);
     }
@@ -192,24 +187,23 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
           <Monitor className="w-7 h-7 text-indigo-600 dark:text-indigo-400" />
         </div>
         <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-          Launcher personnalisé pour {instance.name}
+          {tr("Launcher personnalisé pour")} {instance.name}
         </h2>
         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed">
-          Offrez à vos joueurs un launcher autonome et personnalisé à vos couleurs. Il gère l'installation de Java, la synchronisation automatique des mods et le lancement sécurisé sans dépendre d'aucune solution tierce.
-        </p>
+          {tr("Offrez à vos joueurs un launcher autonome et personnalisé à vos couleurs. Il gère l'installation de Java, la synchronisation automatique des mods et le lancement sécurisé sans dépendre d'aucune solution tierce.")} </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6 text-left">
           <div className="p-3 bg-zinc-50 dark:bg-zinc-950/50 border border-zinc-200 dark:border-zinc-800 rounded-xl">
-            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">Autonomie totale</span>
-            <p className="text-[11px] text-zinc-500 mt-0.5">Moteur PackPanel indépendant, aucune API EML ou tierce nécessaire.</p>
+            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">{tr("Autonomie totale")}</span>
+            <p className="text-[11px] text-zinc-500 mt-0.5">{tr("Moteur PackPanel indépendant, aucune API EML ou tierce nécessaire.")}</p>
           </div>
           <div className="p-3 bg-zinc-50 dark:bg-zinc-950/50 border border-zinc-200 dark:border-zinc-800 rounded-xl">
-            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">Personnalisation UI</span>
-            <p className="text-[11px] text-zinc-500 mt-0.5">Logo, fond d'écran, modèle visuel (Minimal, Community, Network).</p>
+            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">{tr("Personnalisation UI")}</span>
+            <p className="text-[11px] text-zinc-500 mt-0.5">{tr("Logo, fond d'écran, modèle visuel (Minimal, Community, Network).")}</p>
           </div>
           <div className="p-3 bg-zinc-50 dark:bg-zinc-950/50 border border-zinc-200 dark:border-zinc-800 rounded-xl">
-            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">Exécutable prêt</span>
-            <p className="text-[11px] text-zinc-500 mt-0.5">Génération d'archives prêtes au téléchargement avec checksum SHA-256.</p>
+            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">{tr("Exécutable prêt")}</span>
+            <p className="text-[11px] text-zinc-500 mt-0.5">{tr("Génération d'archives prêtes au téléchargement avec checksum SHA-256.")}</p>
           </div>
         </div>
 
@@ -219,7 +213,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
           className="mt-8 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-2"
         >
           <Sparkles className="w-4 h-4" />
-          {loading ? 'Activation...' : 'Activer le launcher pour cette instance'}
+          {loading ? tr("Activation...") : tr("Activer le launcher pour cette instance")}
         </button>
       </div>
     );
@@ -236,13 +230,12 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                {title || 'Launcher personnalisé'}
+                {title || tr("Launcher personnalisé")}
               </h2>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                Actif
-              </span>
+                {tr("Actif")} </span>
             </div>
-            <p className="text-xs text-zinc-500 font-mono">Modèle : {template.toUpperCase()}</p>
+            <p className="text-xs text-zinc-500 font-mono">{tr("Modèle :")} {template.toUpperCase()}</p>
           </div>
         </div>
 
@@ -252,8 +245,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             disabled={loading}
             className="px-3 py-1.5 text-xs text-zinc-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
           >
-            Désactiver
-          </button>
+            {tr("Désactiver")} </button>
         </div>
       </div>
 
@@ -264,16 +256,14 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             <div className="border-b border-zinc-100 dark:border-zinc-800/80 pb-3">
               <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
                 <Palette className="w-4 h-4 text-indigo-500" />
-                Personnalisation & Identité
-              </h3>
+                {tr("Personnalisation & Identité")} </h3>
             </div>
 
             {/* Title & Accent Color */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Titre du Launcher
-                </label>
+                  {tr("Titre du Launcher")} </label>
                 <input
                   type="text"
                   required
@@ -285,8 +275,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
 
               <div>
                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Couleur d'accent
-                </label>
+                  {tr("Couleur d'accent")} </label>
                 <div className="flex items-center space-x-2">
                   <input
                     type="color"
@@ -304,14 +293,13 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               </div>
             </div>
 
-            <p className="text-xs text-zinc-500">Le launcher est dédié à cette instance. Les joueurs saisissent leur pseudo et cliquent sur Jouer ; la mémoire, les arguments JVM et les fichiers du jeu sont accessibles dans les paramètres.</p>
+            <p className="text-xs text-zinc-500">{tr("Le launcher est dédié à cette instance. Les joueurs saisissent leur pseudo et cliquent sur Jouer ; la mémoire, les arguments JVM et les fichiers du jeu sont accessibles dans les paramètres.")}</p>
             {/* Media Uploads: Logo & Background (Direct into CAS) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               {/* Logo */}
               <div>
                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Logo personnalisé (PNG transparent recommandé)
-                </label>
+                  {tr("Logo personnalisé (PNG transparent recommandé)")} </label>
                 <div className="flex items-center space-x-2">
                   <input
                     type="file"
@@ -327,7 +315,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                     className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-300 transition flex items-center gap-1.5"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    {uploadingLogo ? 'Envoi...' : 'Téléverser logo'}
+                    {uploadingLogo ? tr("Envoi...") : tr("Téléverser logo")}
                   </button>
                   {logoUrl && (
                     <button
@@ -335,8 +323,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                       onClick={() => setLogoUrl('')}
                       className="text-xs text-rose-500 hover:underline"
                     >
-                      Retirer
-                    </button>
+                      {tr("Retirer")} </button>
                   )}
                 </div>
                 {logoUrl && (
@@ -347,8 +334,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               {/* Background */}
               <div>
                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Arrière-plan (1920x1080 recommandé)
-                </label>
+                  {tr("Arrière-plan (1920x1080 recommandé)")} </label>
                 <div className="flex items-center space-x-2">
                   <input
                     type="file"
@@ -364,7 +350,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                     className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-300 transition flex items-center gap-1.5"
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    {uploadingBg ? 'Envoi...' : 'Téléverser fond'}
+                    {uploadingBg ? tr("Envoi...") : tr("Téléverser fond")}
                   </button>
                   {backgroundUrl && (
                     <button
@@ -372,8 +358,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                       onClick={() => setBackgroundUrl('')}
                       className="text-xs text-rose-500 hover:underline"
                     >
-                      Retirer
-                    </button>
+                      {tr("Retirer")} </button>
                   )}
                 </div>
                 {backgroundUrl && (
@@ -385,8 +370,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             {/* Auth Providers */}
             <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
               <span className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                Fournisseurs d'authentification autorisés
-              </span>
+                {tr("Fournisseurs d'authentification autorisés")} </span>
               <div className="flex items-center space-x-4">
                 <label className="flex items-center space-x-2 text-xs cursor-pointer">
                   <input
@@ -395,7 +379,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                     onChange={e => setAuthMicrosoft(e.target.checked)}
                     className="rounded text-indigo-600"
                   />
-                  <span className="text-zinc-800 dark:text-zinc-200">Compte officiel Microsoft</span>
+                  <span className="text-zinc-800 dark:text-zinc-200">{tr("Compte officiel Microsoft")}</span>
                 </label>
                 <label className="flex items-center space-x-2 text-xs cursor-pointer">
                   <input
@@ -404,7 +388,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                     onChange={e => setAuthOffline(e.target.checked)}
                     className="rounded text-indigo-600"
                   />
-                  <span className="text-zinc-800 dark:text-zinc-200">Mode Offline (Pseudonyme libre)</span>
+                  <span className="text-zinc-800 dark:text-zinc-200">{tr("Mode Offline (Pseudonyme libre)")}</span>
                 </label>
               </div>
             </div>
@@ -413,8 +397,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               <div>
                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Lien Discord communautaire
-                </label>
+                  {tr("Lien Discord communautaire")} </label>
                 <input
                   type="text"
                   value={discordUrl}
@@ -426,8 +409,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
 
               <div>
                 <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                  Site Web officiel
-                </label>
+                  {tr("Site Web officiel")} </label>
                 <input
                   type="text"
                   value={websiteUrl}
@@ -444,7 +426,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                 disabled={loading}
                 className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 text-xs font-semibold rounded-lg shadow-xs transition"
               >
-                {loading ? 'Enregistrement...' : 'Enregistrer la configuration'}
+                {loading ? tr("Enregistrement...") : tr("Enregistrer la configuration")}
               </button>
             </div>
           </form>
@@ -456,8 +438,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-xs">
             <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-              Aperçu en direct du launcher
-            </h3>
+              {tr("Aperçu en direct du launcher")} </h3>
 
             {/* Preview mirrors the instance-bound desktop layout. */}
             <div className="rounded-xl overflow-hidden border border-zinc-300 dark:border-zinc-700/80 shadow-md bg-[#101114] text-white">
@@ -471,7 +452,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                     {logoUrl ? <img src={logoUrl} alt="Logo" className="w-5 h-5 object-contain" /> : <Layers className="w-4 h-4" />}
                   </div>
                   <div className="text-[8px] rounded p-1.5" style={{ backgroundColor: `${accentColor}18`, color: accentColor }}>{text('Jouer', 'Play')}</div>
-                  <div className="text-[8px] text-zinc-500 p-1.5">{text('Paramètres', 'Settings')}</div>
+                  <div className="text-[8px] text-zinc-500 p-1.5">{text(tr("Paramètres"), 'Settings')}</div>
                 </div>
                 <div className="flex-1 min-w-0 p-3 space-y-3">
                   <div className="h-28 rounded-lg bg-cover bg-center relative overflow-hidden p-3" style={{ backgroundImage: `linear-gradient(90deg,#171b25ed,#171b2560),url(${JSON.stringify(backgroundUrl || launcherLandscape)})` }}>
@@ -497,8 +478,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
                 <FileArchive className="w-4 h-4 text-indigo-500" />
-                Générer les exécutables du launcher
-              </h3>
+                {tr("Générer les exécutables du launcher")} </h3>
             </div>
 
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -510,7 +490,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                 { id: 'windows', label: 'Windows (.zip / .bat)' },
                 { id: 'linux', label: 'Linux (.zip / .sh)' },
                 { id: 'macos', label: 'macOS (.zip)' },
-                { id: 'all', label: 'Toutes les plateformes' }
+                { id: 'all', label: tr("Toutes les plateformes") }
               ].map(os => (
                 <button
                   key={os.id}
@@ -535,12 +515,12 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               {building ? (
                 <>
                   <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
-                  <span>Génération en cours...</span>
+                  <span>{tr("Génération en cours...")}</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Générer le launcher ({targetOs.toUpperCase()})</span>
+                  <span>{tr("Générer le launcher (")}{targetOs.toUpperCase()})</span>
                 </>
               )}
             </button>
@@ -554,13 +534,12 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
           <div className="flex items-center space-x-2">
             <Download className="w-4 h-4 text-indigo-500" />
             <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-              Historique des builds & Téléchargements
-            </h3>
+              {tr("Historique des builds & Téléchargements")} </h3>
           </div>
           <button
             onClick={loadBuilds}
             className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg transition"
-            title="Rafraîchir les builds"
+            title={tr("Rafraîchir les builds")}
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -568,19 +547,18 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
 
         {builds.length === 0 ? (
           <div className="py-8 text-center text-xs text-zinc-400">
-            Aucun build généré pour l'instant. Cliquez sur "Générer le launcher" ci-dessus pour produire votre premier exécutable.
-          </div>
+            {tr("Aucun build généré pour l'instant. Cliquez sur \"Générer le launcher\" ci-dessus pour produire votre premier exécutable.")} </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-zinc-50 dark:bg-zinc-950/60 text-zinc-500 uppercase font-mono text-[10px] border-y border-zinc-100 dark:border-zinc-800">
                 <tr>
-                  <th className="py-2.5 px-3">Version</th>
-                  <th className="py-2.5 px-3">Plateforme</th>
-                  <th className="py-2.5 px-3">Taille</th>
-                  <th className="py-2.5 px-3">Empreinte SHA-256</th>
-                  <th className="py-2.5 px-3">Date</th>
-                  <th className="py-2.5 px-3 text-right">Action</th>
+                  <th className="py-2.5 px-3">{tr("Version")}</th>
+                  <th className="py-2.5 px-3">{tr("Plateforme")}</th>
+                  <th className="py-2.5 px-3">{tr("Taille")}</th>
+                  <th className="py-2.5 px-3">{tr("Empreinte SHA-256")}</th>
+                  <th className="py-2.5 px-3">{tr("Date")}</th>
+                  <th className="py-2.5 px-3 text-right">{tr("Action")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
@@ -601,7 +579,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                       {b.sha256 ? `${b.sha256.substring(0, 16)}...` : '-'}
                     </td>
                     <td className="py-3 px-3 text-zinc-500 text-[11px]">
-                      {new Date(b.created_at).toLocaleString()}
+                      {new Date(b.created_at).toLocaleString(locale())}
                     </td>
                     <td className="py-3 px-3 text-right">
                       <button
@@ -610,8 +588,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                         className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold text-xs transition shadow-2xs"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        Télécharger
-                      </button>
+                        {tr("Télécharger")} </button>
                     </td>
                   </tr>
                 ))}

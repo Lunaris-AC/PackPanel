@@ -30,7 +30,14 @@ EOF
 fi
 bash scripts/deploy.sh
 if [ -n "${INITIAL_PASSWORD:-}" ]; then
-  printf 'Initial administrator: %s\nInitial password: %s\n' "$ADMIN_LOGIN" "$INITIAL_PASSWORD"
   sed -i 's/^ADMIN_DEFAULT_PASSWORD=.*/ADMIN_DEFAULT_PASSWORD=/' .env
   docker compose up -d --no-build api
+  ADMIN_READY_PORT=$(docker compose port nginx 8080 | head -n 1)
+  ADMIN_READY_PORT=${ADMIN_READY_PORT##*:}
+  for attempt in $(seq 1 30); do
+    if curl --fail --silent "http://127.0.0.1:$ADMIN_READY_PORT/api/health" >/dev/null; then break; fi
+    sleep 1
+  done
+  curl --fail --silent --show-error "http://127.0.0.1:$ADMIN_READY_PORT/api/health" >/dev/null
+  printf 'Initial administrator: %s\nInitial password: %s\n' "$ADMIN_LOGIN" "$INITIAL_PASSWORD"
 fi

@@ -1,3 +1,4 @@
+import { formatBytes, locale } from '../i18n/format';
 import React, { useEffect, useState } from 'react';
 import {
   Server,
@@ -23,17 +24,10 @@ interface DashboardPageProps {
   onNavigate: (tab: string, meta?: any) => void;
 }
 
-function formatBytes(bytes: number, decimals = 2) {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
+
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
-  const { t } = useTranslation();
+  const { tr, t } = useTranslation();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -100,8 +94,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               {s?.totalEndpoints || 0}
             </div>
             <div className="text-[11px] text-zinc-500 mt-0.5">
-              {s?.activeReleases || 0} active release(s)
-            </div>
+              {s?.activeReleases || 0}  {tr("active release(s)")} </div>
           </div>
         </div>
 
@@ -118,8 +111,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               {formatBytes(s?.physicalBytes || 0)}
             </div>
             <div className="text-[11px] text-zinc-500 mt-0.5 font-mono">
-              {s?.physicalObjects || 0} CAS objects
-            </div>
+              {s?.physicalObjects || 0}  {tr("CAS objects")} </div>
           </div>
         </div>
 
@@ -136,8 +128,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               {s?.deduplicationRatio || '1.00'}x
             </div>
             <div className="text-[11px] text-zinc-500 mt-0.5">
-              {formatBytes(s?.savedBytes || 0)} saved
-            </div>
+              {formatBytes(s?.savedBytes || 0)}  {tr("saved")} </div>
           </div>
         </div>
 
@@ -154,7 +145,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               {formatBytes(s?.diskFree || 0)}
             </div>
             <div className="text-[11px] text-zinc-500 mt-0.5">
-              Free of {formatBytes(s?.diskTotal || 0)}
+              {tr("Free of")} {formatBytes(s?.diskTotal || 0)}
             </div>
           </div>
         </div>
@@ -172,7 +163,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               onClick={() => onNavigate('endpoints')}
               className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium"
             >
-              View all ({s?.totalEndpoints || 0})
+              {tr("View all (")}{s?.totalEndpoints || 0})
             </button>
           </div>
 
@@ -180,12 +171,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold text-zinc-500 bg-zinc-50/50 dark:bg-zinc-800/30">
-                  <th className="py-2.5 px-3">Name</th>
-                  <th className="py-2.5 px-3">Slug</th>
-                  <th className="py-2.5 px-3">Active Version</th>
-                  <th className="py-2.5 px-3">Files</th>
-                  <th className="py-2.5 px-3">Size</th>
-                  <th className="py-2.5 px-3 text-right">Action</th>
+                  <th className="py-2.5 px-3">{tr("Name")}</th>
+                  <th className="py-2.5 px-3">{tr("Slug")}</th>
+                  <th className="py-2.5 px-3">{tr("Active Version")}</th>
+                  <th className="py-2.5 px-3">{tr("Files")}</th>
+                  <th className="py-2.5 px-3">{tr("Size")}</th>
+                  <th className="py-2.5 px-3 text-right">{tr("Action")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 font-mono text-[11px]">
@@ -215,8 +206,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
-                            draft
-                          </span>
+                            {tr("draft")} </span>
                         )}
                       </td>
                       <td className="py-2.5 px-3 text-zinc-500">
@@ -227,8 +217,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                       </td>
                       <td className="py-2.5 px-3 text-right">
                         <span className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition font-sans text-xs font-semibold">
-                          Open →
-                        </span>
+                          {tr("Open →")} </span>
                       </td>
                     </tr>
                   ))
@@ -248,15 +237,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               onClick={() => onNavigate('jobs')}
               className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 font-medium"
             >
-              Logs
-            </button>
+              {tr("Logs")} </button>
           </div>
 
           <div className="space-y-2">
             {(!data?.recentJobs || data.recentJobs.length === 0) ? (
               <div className="py-8 text-center text-zinc-400 text-xs">
-                No active background tasks
-              </div>
+                {tr("No active background tasks")} </div>
             ) : (
               data.recentJobs.slice(0, 5).map(job => (
                 <div
@@ -268,7 +255,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                       {job.job_type}
                     </div>
                     <div className="text-[10px] text-zinc-400">
-                      {new Date(job.created_at).toLocaleTimeString()}
+                      {new Date(job.created_at).toLocaleTimeString(locale())}
                     </div>
                   </div>
                   <div>

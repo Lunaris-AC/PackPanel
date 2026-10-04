@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n';
 import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft,
@@ -22,6 +23,7 @@ interface EndpointDetailPageProps {
 }
 
 export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpointId, onBack }) => {
+  const { tr } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const canEdit = user?.role === 'admin' || user?.role === 'operator';
@@ -53,7 +55,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
       setEditRetentionDays(res.endpoint.default_retention_days);
       setEditMinVersions(res.endpoint.min_retained_versions);
     } catch (e: any) {
-      toast.error('Erreur chargement endpoint');
+      toast.error(tr("Erreur chargement endpoint"));
     } finally {
       setLoading(false);
     }
@@ -67,7 +69,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
     if (!endpoint) return;
     navigator.clipboard.writeText(endpoint.manifest_url);
     setCopied(true);
-    toast.success('URL du manifeste copiée !');
+    toast.success(tr("URL du manifeste copiée !"));
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -87,10 +89,10 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
         default_retention_days: editRetentionDays,
         min_retained_versions: editMinVersions
       });
-      toast.success('Paramètres enregistrés');
+      toast.success(tr("Paramètres enregistrés"));
       loadEndpoint();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur enregistrement paramètres');
+      toast.error(err.message || tr("Erreur enregistrement paramètres"));
     } finally {
       setSavingSettings(false);
     }
@@ -115,8 +117,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
               className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 mb-1"
             >
               <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-              Retour
-            </button>
+              {tr("Retour")} </button>
             <div className="flex items-center space-x-3">
               <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
                 {endpoint.name}
@@ -128,12 +129,11 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
                 </span>
               ) : (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-500">
-                  Non publié
-                </span>
+                  {tr("Non publié")} </span>
               )}
             </div>
             <p className="text-xs text-slate-500 font-mono">
-              Slug : <span className="text-brand-600 dark:text-brand-400 font-semibold">{endpoint.slug}</span>
+              {tr("Slug :")} <span className="text-brand-600 dark:text-brand-400 font-semibold">{endpoint.slug}</span>
             </p>
           </div>
 
@@ -146,15 +146,14 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
               <button
                 onClick={handleCopyUrl}
                 className="p-1 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition shrink-0"
-                title="Copier l'URL du manifeste"
+                title={tr("Copier l'URL du manifeste")}
               >
                 {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
             {!endpoint.active_release_id && (
               <span className="text-[11px] text-amber-600 dark:text-amber-400 font-sans">
-                ⚠ Active dès la publication de la 1ère version (HTTP 404 actuellement)
-              </span>
+                {tr("⚠ Active dès la publication de la 1ère version (HTTP 404 actuellement)")} </span>
             )}
           </div>
         </div>
@@ -170,8 +169,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
             }`}
           >
             <FolderOpen className="w-4 h-4 mr-2" />
-            Explorateur de fichiers
-          </button>
+            {tr("Explorateur de fichiers")} </button>
 
           <button
             onClick={() => setActiveTab('versions')}
@@ -182,8 +180,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
             }`}
           >
             <History className="w-4 h-4 mr-2" />
-            Versions & Rollback
-          </button>
+            {tr("Versions & Rollback")} </button>
 
           {canEdit && (
             <button
@@ -195,8 +192,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
               }`}
             >
               <Settings className="w-4 h-4 mr-2" />
-              Paramètres
-            </button>
+              {tr("Paramètres")} </button>
           )}
         </div>
       </div>
@@ -207,14 +203,12 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
       {activeTab === 'settings' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm max-w-2xl">
           <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-4">
-            Configuration de l'endpoint
-          </h2>
+            {tr("Configuration de l'endpoint")} </h2>
 
           <form onSubmit={handleSaveSettings} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
-                Nom du modpack / environnement
-              </label>
+                {tr("Nom du modpack / environnement")} </label>
               <input
                 type="text"
                 required
@@ -226,8 +220,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
 
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
-                Description
-              </label>
+                {tr("Description")} </label>
               <textarea
                 rows={2}
                 value={editDesc}
@@ -238,8 +231,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
 
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
               <span className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">
-                Directives de synchronisation & nettoyage
-              </span>
+                {tr("Directives de synchronisation & nettoyage")} </span>
 
               <label className="flex items-center space-x-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
                 <input
@@ -248,7 +240,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
                   onChange={e => setEditCleanupMods(e.target.checked)}
                   className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                 />
-                <span>Nettoyer le dossier <strong>mods</strong></span>
+                <span>{tr("Nettoyer le dossier")} <strong>mods</strong></span>
               </label>
 
               <label className="flex items-center space-x-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
@@ -258,15 +250,14 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
                   onChange={e => setEditCleanupConfig(e.target.checked)}
                   className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                 />
-                <span>Nettoyer le dossier <strong>config</strong></span>
+                <span>{tr("Nettoyer le dossier")} <strong>config</strong></span>
               </label>
 
               {editCleanupConfig && (
                 <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl flex items-start space-x-2 text-xs text-amber-800 dark:text-amber-200">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500 mt-0.5" />
                   <span>
-                    <strong>Attention :</strong> Nettoyer le dossier <code>config</code> écrasera les modifications locales des joueurs.
-                  </span>
+                    <strong>{tr("Attention :")}</strong>  {tr("Nettoyer le dossier")} <code>config</code>  {tr("écrasera les modifications locales des joueurs.")} </span>
                 </div>
               )}
             </div>
@@ -274,8 +265,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
-                  Rétention (Jours)
-                </label>
+                  {tr("Rétention (Jours)")} </label>
                 <input
                   type="number"
                   min={1}
@@ -287,8 +277,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
 
               <div>
                 <label className="block text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">
-                  Versions min. conservées
-                </label>
+                  {tr("Versions min. conservées")} </label>
                 <input
                   type="number"
                   min={1}
@@ -305,7 +294,7 @@ export const EndpointDetailPage: React.FC<EndpointDetailPageProps> = ({ endpoint
                 disabled={savingSettings}
                 className="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs rounded-xl shadow transition disabled:opacity-60"
               >
-                {savingSettings ? 'Enregistrement...' : 'Enregistrer les paramètres'}
+                {savingSettings ? tr("Enregistrement...") : tr("Enregistrer les paramètres")}
               </button>
             </div>
           </form>

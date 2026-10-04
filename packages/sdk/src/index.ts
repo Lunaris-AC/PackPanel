@@ -43,14 +43,14 @@ export class PackPanelApiClient {
   }
 
   /**
-   * Fetches public launcher configuration
+   * Fetches launcher configuration from the authenticated administrative API
    */
   async getLauncherConfig(launcherIdOrSlug: string): Promise<LauncherConfigV2> {
     return this.request<LauncherConfigV2>(`/api/v2/launchers/${launcherIdOrSlug}/config`);
   }
 
   /**
-   * Fetches full V2 instance manifest
+   * Fetches the V2 instance manifest from the authenticated administrative API
    */
   async getInstanceManifest(instanceIdOrSlug: string): Promise<InstanceManifestV2> {
     return this.request<InstanceManifestV2>(`/api/v2/instances/${instanceIdOrSlug}/manifest`);

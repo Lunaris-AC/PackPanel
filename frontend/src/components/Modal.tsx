@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n';
 import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 
@@ -16,6 +17,7 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   maxWidth = 'max-w-xl'
 }) => {
+  const { tr } = useTranslation();
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -42,7 +44,7 @@ export const Modal: React.FC<ModalProps> = ({
           <button
             onClick={onClose}
             className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-            aria-label="Fermer"
+            aria-label={tr("Fermer")}
           >
             <X className="w-5 h-5" />
           </button>

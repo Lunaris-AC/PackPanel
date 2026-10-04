@@ -1,3 +1,4 @@
+import { translateApiMessage, translateText } from '../i18n/text';
 const BASE_URL = '/api';
 
 export class ApiError extends Error {
@@ -5,7 +6,7 @@ export class ApiError extends Error {
   data: any;
 
   constructor(message: string, status: number, data?: any) {
-    super(message);
+    super(translateApiMessage(message));
     this.name = 'ApiError';
     this.status = status;
     this.data = data;
@@ -50,10 +51,12 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   }
 
   if (!res.ok) {
-    const errorMsg = data?.error || data?.message || `Erreur serveur (${res.status})`;
+    const errorMsg = data?.error || data?.message || translateText('Erreur serveur ({0})', { 0: res.status });
     throw new ApiError(errorMsg, res.status, data);
   }
 
+  // Validation responses return an error with HTTP 200.
+  if (data && typeof data === 'object' && typeof data.error === 'string') data.error = translateApiMessage(data.error);
   return data as T;
 }
 

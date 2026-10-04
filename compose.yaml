@@ -27,8 +27,8 @@ services:
       NODE_ENV: production
       PORT: 3000
       DATABASE_URL: postgres://${POSTGRES_USER:-packpanel}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-packpanel}
-      ADMIN_FQDN: ${ADMIN_FQDN:-panel.mccdn.internal}
-      FILES_FQDN: ${FILES_FQDN:-mccdn.inferi.fr}
+      ADMIN_FQDN: ${ADMIN_FQDN:-panel.example.com}
+      FILES_FQDN: ${FILES_FQDN:-cdn.example.com}
       ADMIN_ORIGIN_PORT: 3000
       DATA_DIR: /srv/packpanel
       APP_DIR: /app
@@ -52,8 +52,8 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER:-packpanel}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-packpanel}
-      ADMIN_FQDN: ${ADMIN_FQDN:-panel.mccdn.internal}
-      FILES_FQDN: ${FILES_FQDN:-mccdn.inferi.fr}
+      ADMIN_FQDN: ${ADMIN_FQDN:-panel.example.com}
+      FILES_FQDN: ${FILES_FQDN:-cdn.example.com}
       DATA_DIR: /srv/packpanel
       APP_DIR: /app
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}

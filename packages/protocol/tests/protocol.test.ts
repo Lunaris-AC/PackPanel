@@ -34,7 +34,7 @@ describe('@packpanel/protocol: InstanceManifestV2 validation', () => {
           path: 'mods/fabric-api.jar',
           sha1: '1234567890abcdef1234567890abcdef12345678',
           size: 2048500,
-          url: 'https://mccdn.inferi.fr/test-modpack/releases/r0001/mods/fabric-api.jar',
+          url: 'https://cdn.example.com/test-modpack/releases/r0001/mods/fabric-api.jar',
           policy: 'required'
         }
       ],
@@ -89,7 +89,7 @@ describe('@packpanel/protocol: LauncherConfigV2 validation', () => {
           id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
           slug: 'test-modpack',
           name: 'Main Modpack',
-          manifestUrl: 'https://mccdn.inferi.fr/test-modpack/packpanel.json',
+          manifestUrl: 'https://cdn.example.com/test-modpack/packpanel.json',
           isDefault: true
         }
       ]

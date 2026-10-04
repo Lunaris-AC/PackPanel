@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -22,6 +23,7 @@ interface InstanceSettingsTabProps {
 }
 
 export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instance, onRefresh }) => {
+  const { tr } = useTranslation();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -100,7 +102,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
           setLoaderVersion('');
         }
       } catch (e: any) {
-        if (active) setCatalogError(e.message || 'Impossible de charger le catalogue.');
+        if (active) setCatalogError(e.message || tr("Impossible de charger le catalogue."));
       } finally {
         if (active) setLoadingCatalog(false);
       }
@@ -116,7 +118,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
       // Validate with catalog
       const validation = await catalogApi.validateCombination(minecraftVersion, loaderType, loaderVersion || undefined);
       if (!validation.valid) {
-        toast.error(validation.error || 'Combinaison Minecraft / loader invalide');
+        toast.error(validation.error || tr("Combinaison Minecraft / loader invalide"));
         setSaving(false);
         return;
       }
@@ -132,10 +134,10 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         serverAddress: serverAddress.trim() || null
       });
 
-      toast.success('Paramètres enregistrés en brouillon. N’oubliez pas de publier pour déployer aux joueurs !');
+      toast.success(tr("Paramètres enregistrés en brouillon. N’oubliez pas de publier pour déployer aux joueurs !"));
       onRefresh();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de l’enregistrement');
+      toast.error(err.message || tr("Erreur lors de l’enregistrement"));
     } finally {
       setSaving(false);
     }
@@ -143,20 +145,20 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
 
   const handleDelete = async () => {
     const confirmation = window.prompt(
-      `Pour confirmer la suppression définitive de "${instance.name}", saisissez son slug (${instance.slug}) :`
+      tr("Pour confirmer la suppression définitive de \"{0}\", saisissez son slug ({1}) :", { 0: instance.name, 1: instance.slug })
     );
     if (confirmation !== instance.slug) {
-      if (confirmation !== null) toast.error('Le slug saisi ne correspond pas. Suppression annulée.');
+      if (confirmation !== null) toast.error(tr("Le slug saisi ne correspond pas. Suppression annulée."));
       return;
     }
 
     try {
       setDeleting(true);
       await api.delete(`/v2/instances/${instance.id}`);
-      toast.success('Instance supprimée');
+      toast.success(tr("Instance supprimée"));
       navigate('/instances');
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de la suppression');
+      toast.error(err.message || tr("Erreur lors de la suppression"));
       setDeleting(false);
     }
   };
@@ -167,10 +169,9 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
       <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-4 flex items-start space-x-3 text-xs text-amber-800 dark:text-amber-200">
         <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
         <div>
-          <span className="font-bold block">Principe des versions immuables</span>
+          <span className="font-bold block">{tr("Principe des versions immuables")}</span>
           <span>
-            Les modifications apportées ci-dessous restent en <strong>brouillon</strong>. La version active distribuée à vos joueurs ne sera mise à jour que lorsque vous déclencherez une <strong>publication</strong> dans l'onglet dédié.
-          </span>
+            {tr("Les modifications apportées ci-dessous restent en")} <strong>{tr("brouillon")}</strong>{tr(". La version active distribuée à vos joueurs ne sera mise à jour que lorsque vous déclencherez une")} <strong>{tr("publication")}</strong>  {tr("dans l'onglet dédié.")} </span>
         </div>
       </div>
 
@@ -178,19 +179,16 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         <div>
           <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
             <Settings className="w-4 h-4 text-indigo-500" />
-            Configuration générale & Moteur de jeu
-          </h2>
+            {tr("Configuration générale & Moteur de jeu")} </h2>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Ajustez la version du jeu, le loader, les arguments mémoire et l'adresse du serveur.
-          </p>
+            {tr("Ajustez la version du jeu, le loader, les arguments mémoire et l'adresse du serveur.")} </p>
         </div>
 
         {/* Identity */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Nom de l'instance
-            </label>
+              {tr("Nom de l'instance")} </label>
             <input
               type="text"
               required
@@ -202,8 +200,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
 
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Slug d'accès (Fixe)
-            </label>
+              {tr("Slug d'accès (Fixe)")} </label>
             <input
               type="text"
               disabled
@@ -214,8 +211,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
 
           <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Description
-            </label>
+              {tr("Description")} </label>
             <textarea
               rows={2}
               value={description}
@@ -229,8 +225,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Version Minecraft
-            </label>
+              {tr("Version Minecraft")} </label>
             <select
               value={minecraftVersion}
               onChange={e => setMinecraftVersion(e.target.value)}
@@ -267,13 +262,12 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
 
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Version du Loader
-            </label>
+              {tr("Version du Loader")} </label>
             {loaderType === 'vanilla' ? (
               <input
                 type="text"
                 disabled
-                value="Aucun (Vanilla)"
+                value={tr("Aucun (Vanilla)")}
                 className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-400"
               />
             ) : (
@@ -284,11 +278,11 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
               >
                 {loaderVersions.map((lv, idx) => (
                   <option key={lv.version} value={lv.version}>
-                    {lv.version} {lv.isRecommended ? '(Recommandée)' : ''}
+                    {lv.version} {lv.isRecommended ? tr("(Recommandée)") : ''}
                   </option>
                 ))}
                 {loaderVersion && !loaderVersions.some(lv => lv.version === loaderVersion) && (
-                  <option value={loaderVersion}>{loaderVersion} (Actuelle)</option>
+                  <option value={loaderVersion}>{loaderVersion}  {tr("(Actuelle)")}</option>
                 )}
               </select>
             )}
@@ -299,25 +293,23 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Version Java requise
-            </label>
+              {tr("Version Java requise")} </label>
             <select
               value={javaVersion}
               onChange={e => setJavaVersion(Number(e.target.value))}
               className="w-full px-3 py-2 text-xs bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100"
             >
-              <option value={8}>Java 8 (&lt;= 1.16.5)</option>
+              <option value={8}>{tr("Java 8 (<= 1.16.5)")}</option>
               <option value={16}>Java 16 (1.17)</option>
-              <option value={17}>Java 17 (1.18 à 1.20.4)</option>
-              <option value={21}>Java 21 (1.20.5+ et NeoForge)</option>
+              <option value={17}>{tr("Java 17 (1.18 à 1.20.4)")}</option>
+              <option value={21}>{tr("Java 21 (1.20.5+ et NeoForge)")}</option>
               <option value={25}>Java 25 (26.1+)</option>
             </select>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Arguments JVM
-            </label>
+              {tr("Arguments JVM")} </label>
             <input
               type="text"
               value={javaArgs}
@@ -328,8 +320,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
 
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Connexion directe serveur
-            </label>
+              {tr("Connexion directe serveur")} </label>
             <input
               type="text"
               value={serverAddress}
@@ -348,7 +339,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
             className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-semibold text-xs rounded-xl shadow-xs transition flex items-center gap-2 disabled:opacity-60"
           >
             <Save className="w-4 h-4" />
-            {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
+            {saving ? tr("Enregistrement...") : tr("Enregistrer les modifications")}
           </button>
         </div>
       </form>
@@ -357,11 +348,9 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
       <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/60 rounded-2xl p-6 space-y-3">
         <h3 className="text-sm font-bold text-rose-800 dark:text-rose-300 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-rose-600" />
-          Zone de danger : Supprimer cette instance
-        </h3>
+          {tr("Zone de danger : Supprimer cette instance")} </h3>
         <p className="text-xs text-rose-700/80 dark:text-rose-300/70">
-          La suppression de l'instance supprime son espace de distribution, son launcher associé et toutes ses versions publiées. Cette action est irréversible.
-        </p>
+          {tr("La suppression de l'instance supprime son espace de distribution, son launcher associé et toutes ses versions publiées. Cette action est irréversible.")} </p>
 
         <div className="pt-2">
           <button
@@ -371,7 +360,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
             className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-xl transition shadow-xs flex items-center gap-2"
           >
             <Trash2 className="w-4 h-4" />
-            {deleting ? 'Suppression...' : 'Supprimer définitivement cette instance'}
+            {deleting ? tr("Suppression...") : tr("Supprimer définitivement cette instance")}
           </button>
         </div>
       </div>

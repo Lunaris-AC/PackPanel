@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import { useTranslation } from '../i18n';
+import { translateApiMessage } from '../i18n/text';
 
 interface Toast {
   id: string;
@@ -24,6 +26,7 @@ const ToastContext = createContext<ToastContextType>({
 });
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { tr, language } = useTranslation();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const addToast = useCallback((type: 'success' | 'error' | 'info', message: string) => {
@@ -63,10 +66,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               {t.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />}
               {t.type === 'error' && <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />}
               {t.type === 'info' && <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />}
-              <p className="text-sm font-medium">{t.message}</p>
+              <p className="text-sm font-medium" role="status">{translateApiMessage(t.message, language)}</p>
             </div>
             <button
               onClick={() => removeToast(t.id)}
+              aria-label={language === 'fr' ? tr("Fermer") : 'Close'}
               className="ml-3 p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition"
             >
               <X className="w-4 h-4" />

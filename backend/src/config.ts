@@ -12,12 +12,12 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url().default(process.env.NODE_ENV === 'test' ? 'postgres://packpanel:test@localhost/packpanel_test' : ''),
   
   // Public domains and ports
-  ADMIN_FQDN: z.string().default('panel.mccdn.internal'),
-  FILES_FQDN: z.string().default('mccdn.internal'),
+  ADMIN_FQDN: z.string().default('panel.example.com'),
+  FILES_FQDN: z.string().default('cdn.example.com'),
   FILES_BASE_URL: z.string().default(''),
   ADMIN_ORIGIN_PORT: z.coerce.number().default(8080),
   FILES_ORIGIN_PORT: z.coerce.number().default(8081),
-  ZORAXY_SOURCE_IP: z.string().default('192.168.1.173'),
+  ZORAXY_SOURCE_IP: z.string().default('127.0.0.1'),
 
   // Storage paths
   APP_DIR: z.string().default('/opt/packpanel'),

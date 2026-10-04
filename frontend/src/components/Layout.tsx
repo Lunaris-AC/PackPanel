@@ -32,7 +32,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { language, setLanguage, t } = useTranslation();
+  const { tr, language, setLanguage, t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -66,7 +66,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navItems = [
     { id: 'dashboard', path: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
-    { id: 'instances', path: '/instances', label: language === 'fr' ? 'Instances Minecraft' : 'Minecraft Instances', icon: Box },
+    { id: 'instances', path: '/instances', label: language === 'fr' ? tr("Instances Minecraft") : 'Minecraft Instances', icon: Box },
     { id: 'jobs', path: '/jobs', label: t('nav.jobs'), icon: Activity },
     ...(user?.role === 'admin'
       ? [{ id: 'users', path: '/users', label: t('nav.users'), icon: Users }]
@@ -134,7 +134,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   sseConnected ? 'bg-emerald-500' : 'bg-amber-500'
                 }`}
               />
-              <span className="font-mono">{sseConnected ? 'Live SSE' : 'Offline'}</span>
+              <span className="font-mono">{sseConnected ? tr("Live SSE") : tr("Offline")}</span>
             </span>
             <span className="font-mono text-[10px] text-zinc-400">v2.0.0</span>
           </div>
@@ -192,7 +192,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               <span className="font-medium text-zinc-700 dark:text-zinc-300">PackPanel</span>
               <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
               <span className="font-semibold text-zinc-900 dark:text-zinc-100 capitalize">
-                {location.pathname.split('/')[1] || 'instances'}
+                {navItems.find(item => location.pathname.startsWith(item.path))?.label || tr('Instances Minecraft')}
               </span>
             </div>
           </div>
@@ -226,8 +226,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             <button
               onClick={toggleTheme}
               className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
-              title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-              aria-label="Toggle Theme"
+              title={theme === 'dark' ? tr("Light Mode") : tr("Dark Mode")}
+              aria-label={tr("Toggle Theme")}
             >
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>

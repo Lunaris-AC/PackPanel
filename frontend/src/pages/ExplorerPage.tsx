@@ -1,3 +1,5 @@
+import { formatBytes, locale } from '../i18n/format';
+import { useTranslation } from '../i18n';
 import React, { useEffect, useState, useRef } from 'react';
 import {
   Folder,
@@ -32,15 +34,10 @@ interface ExplorerPageProps {
   endpointId: string;
 }
 
-function formatBytes(bytes: number) {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'Ko', 'Mo', 'Go', 'To'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+
 
 export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
+  const { tr } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const canEdit = user?.role === 'admin' || user?.role === 'operator';
@@ -98,7 +95,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
       setItems(res.items || []);
       setRelease(res.release || null);
     } catch (e: any) {
-      toast.error('Erreur chargement explorateur');
+      toast.error(tr("Erreur chargement explorateur"));
     } finally {
       setLoading(false);
     }
@@ -110,7 +107,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
       const res = await api.get<{ history: FileHistoryItem[] }>(`/endpoints/${endpointId}/explorer/history`);
       setHistoryItems(res.history || []);
     } catch (e: any) {
-      toast.error('Impossible de charger l’historique des modifications');
+      toast.error(tr("Impossible de charger l’historique des modifications"));
     } finally {
       setHistoryLoading(false);
     }
@@ -155,14 +152,14 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
   const processAndUploadFiles = async (fileList: Array<{ path: string; file: File }>) => {
     if (!fileList.length) return;
     setIsUploading(true);
-    setUploadStatusText(`Préparation de ${fileList.length} fichier(s)...`);
+    setUploadStatusText(tr("Préparation de {0} fichier(s)...", { 0: fileList.length }));
 
     try {
       // Process in batches of 30 to avoid payload limits
       const BATCH_SIZE = 30;
       for (let i = 0; i < fileList.length; i += BATCH_SIZE) {
         const chunk = fileList.slice(i, i + BATCH_SIZE);
-        setUploadStatusText(`Téléversement des fichiers (${Math.min(i + BATCH_SIZE, fileList.length)}/${fileList.length})...`);
+        setUploadStatusText(tr("Téléversement des fichiers ({0}/{1})...", { 0: Math.min(i + BATCH_SIZE, fileList.length), 1: fileList.length }));
 
         const payloadFiles: Array<{ path: string; contentBase64: string }> = [];
         for (const item of chunk) {
@@ -178,10 +175,10 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
         });
       }
 
-      toast.success(`${fileList.length} fichier(s) téléversé(s) et nouvelle version publiée !`);
+      toast.success(tr("{0} fichier(s) téléversé(s) et nouvelle version publiée !", { 0: fileList.length }));
       await loadDirectory(currentPrefix, search);
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors du téléversement');
+      toast.error(err.message || tr("Erreur lors du téléversement"));
     } finally {
       setIsUploading(false);
       setUploadStatusText('');
@@ -303,7 +300,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
         setFileContent('');
       }
     } catch (err: any) {
-      toast.error('Impossible de charger le fichier');
+      toast.error(tr("Impossible de charger le fichier"));
       setViewerOpen(false);
     } finally {
       setContentLoading(false);
@@ -318,11 +315,11 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
         content: fileContent,
         commitNow: true
       });
-      toast.success('Fichier modifié et nouvelle version publiée !');
+      toast.success(tr("Fichier modifié et nouvelle version publiée !"));
       setViewerOpen(false);
       loadDirectory(currentPrefix, search);
     } catch (e: any) {
-      toast.error(e.message || 'Erreur sauvegarde fichier');
+      toast.error(e.message || tr("Erreur sauvegarde fichier"));
     } finally {
       setSavingFile(false);
     }
@@ -345,8 +342,8 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
   const handleDeleteItem = async (item: ExplorerItem) => {
     const isDir = item.isDir;
     const msg = isDir
-      ? `Supprimer définitivement le dossier "${item.name}/" et tous ses fichiers ? Une nouvelle version sera créée.`
-      : `Supprimer définitivement le fichier "${item.name}" ? Une nouvelle version sera créée.`;
+      ? tr("Supprimer définitivement le dossier \"{0}/\" et tous ses fichiers ? Une nouvelle version sera créée.", { 0: item.name })
+      : tr("Supprimer définitivement le fichier \"{0}\" ? Une nouvelle version sera créée.", { 0: item.name });
 
     if (!window.confirm(msg)) return;
 
@@ -354,10 +351,10 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
       await api.post(`/endpoints/${endpointId}/explorer/delete`, {
         path: item.path
       });
-      toast.success('Élément supprimé et version mise à jour');
+      toast.success(tr("Élément supprimé et version mise à jour"));
       loadDirectory(currentPrefix, search);
     } catch (e: any) {
-      toast.error(e.message || 'Erreur suppression');
+      toast.error(e.message || tr("Erreur suppression"));
     }
   };
 
@@ -367,11 +364,11 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
       const res = await api.post<{ success: boolean; message: string }>(
         `/endpoints/${endpointId}/explorer/undo/${historyId}`
       );
-      toast.success(res.message || 'Modification annulée !');
+      toast.success(res.message || tr("Modification annulée !"));
       await loadHistory();
       await loadDirectory(currentPrefix, search);
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de l’annulation');
+      toast.error(err.message || tr("Erreur lors de l’annulation"));
     } finally {
       setUndoingId(null);
     }
@@ -409,11 +406,9 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
         <div className="absolute inset-0 z-40 bg-zinc-950/80 backdrop-blur-xs border-2 border-dashed border-sky-500 rounded-2xl flex flex-col items-center justify-center p-6 text-center animate-fade-in pointer-events-none">
           <Upload className="w-12 h-12 text-sky-400 animate-bounce mb-3" />
           <h3 className="text-lg font-bold text-white tracking-tight">
-            Déposez vos fichiers ou dossiers ici
-          </h3>
+            {tr("Déposez vos fichiers ou dossiers ici")} </h3>
           <p className="text-xs text-zinc-300 mt-1 max-w-md">
-            Ils seront automatiquement ingérés dans le Content-Addressed Storage et publiés dans une nouvelle version atomique.
-          </p>
+            {tr("Ils seront automatiquement ingérés dans le Content-Addressed Storage et publiés dans une nouvelle version atomique.")} </p>
         </div>
       )}
 
@@ -424,7 +419,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
             <div className="animate-spin rounded-full h-4 w-4 border-2 border-sky-500 border-t-transparent" />
             <span className="font-semibold">{uploadStatusText}</span>
           </div>
-          <span className="text-[11px] font-mono opacity-80">Publication automatique...</span>
+          <span className="text-[11px] font-mono opacity-80">{tr("Publication automatique...")}</span>
         </div>
       )}
 
@@ -439,8 +434,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
             }}
             className="font-semibold text-zinc-700 dark:text-zinc-300 hover:text-sky-500 dark:hover:text-sky-400 shrink-0"
           >
-            racine
-          </button>
+            {tr("racine")} </button>
           {breadcrumbSegments.map((seg, idx) => {
             const pathUpTo = breadcrumbSegments.slice(0, idx + 1).join('/') + '/';
             const isLast = idx === breadcrumbSegments.length - 1;
@@ -471,7 +465,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
           <form onSubmit={handleSearchSubmit} className="relative w-48 sm:w-56 shrink-0">
             <input
               type="text"
-              placeholder="Rechercher..."
+              placeholder={tr("Rechercher...")}
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/80 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
@@ -485,30 +479,30 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="px-2.5 py-1.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-lg flex items-center space-x-1.5 transition"
-                title="Ajouter des fichiers"
+                title={tr("Ajouter des fichiers")}
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Fichiers</span>
+                <span>{tr("Fichiers")}</span>
               </button>
 
               {/* Add Folder */}
               <button
                 onClick={() => folderInputRef.current?.click()}
                 className="px-2.5 py-1.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-lg flex items-center space-x-1.5 transition"
-                title="Ajouter un dossier complet"
+                title={tr("Ajouter un dossier complet")}
               >
                 <FolderPlus className="w-3.5 h-3.5" />
-                <span>Dossier</span>
+                <span>{tr("Dossier")}</span>
               </button>
 
               {/* New Text File */}
               <button
                 onClick={() => setCreateFileOpen(true)}
                 className="px-2.5 py-1.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-lg flex items-center space-x-1.5 transition"
-                title="Créer un fichier texte"
+                title={tr("Créer un fichier texte")}
               >
                 <FilePlus className="w-3.5 h-3.5" />
-                <span>Créer</span>
+                <span>{tr("Créer")}</span>
               </button>
             </>
           )}
@@ -520,10 +514,10 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
               loadHistory();
             }}
             className="px-2.5 py-1.5 text-xs font-medium border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg flex items-center space-x-1.5 transition"
-            title="Historique des modifications et annulations"
+            title={tr("Historique des modifications et annulations")}
           >
             <History className="w-3.5 h-3.5 text-sky-500" />
-            <span>Historique & Undo</span>
+            <span>{tr("Historique & Undo")}</span>
           </button>
         </div>
       </div>
@@ -540,11 +534,9 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
               <Upload className="w-6 h-6" />
             </div>
             <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-              Aucun fichier dans cet endpoint
-            </h3>
+              {tr("Aucun fichier dans cet endpoint")} </h3>
             <p className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto">
-              Glissez-déposez vos mods, configurations ou dossiers complets ici pour publier la première version.
-            </p>
+              {tr("Glissez-déposez vos mods, configurations ou dossiers complets ici pour publier la première version.")} </p>
             {canEdit && (
               <div className="mt-4 flex items-center justify-center space-x-2">
                 <button
@@ -552,30 +544,29 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
                   className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs rounded-lg shadow-2xs flex items-center space-x-1.5 transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Sélectionner des fichiers</span>
+                  <span>{tr("Sélectionner des fichiers")}</span>
                 </button>
                 <button
                   onClick={() => folderInputRef.current?.click()}
                   className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-medium text-xs rounded-lg transition flex items-center space-x-1.5"
                 >
                   <FolderPlus className="w-3.5 h-3.5" />
-                  <span>Sélectionner un dossier</span>
+                  <span>{tr("Sélectionner un dossier")}</span>
                 </button>
               </div>
             )}
           </div>
         ) : items.length === 0 ? (
           <div className="text-center py-12 px-4 text-xs text-zinc-400">
-            Dossier vide ou aucun fichier correspondant à la recherche.
-          </div>
+            {tr("Dossier vide ou aucun fichier correspondant à la recherche.")} </div>
         ) : (
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-zinc-100 dark:border-zinc-800/80 text-zinc-400 font-semibold uppercase text-[10px] tracking-wider bg-zinc-50/50 dark:bg-zinc-800/30">
-                <th className="py-2.5 px-4">Nom</th>
-                <th className="py-2.5 px-4 hidden md:table-cell">Empreinte SHA-1</th>
-                <th className="py-2.5 px-4">Taille</th>
-                <th className="py-2.5 px-4 text-right">Actions</th>
+                <th className="py-2.5 px-4">{tr("Nom")}</th>
+                <th className="py-2.5 px-4 hidden md:table-cell">{tr("Empreinte SHA-1")}</th>
+                <th className="py-2.5 px-4">{tr("Taille")}</th>
+                <th className="py-2.5 px-4 text-right">{tr("Actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60 font-sans">
@@ -597,7 +588,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
                   </td>
 
                   <td className="py-2.5 px-4 font-mono text-[11px] text-zinc-400 hidden md:table-cell">
-                    {item.sha1 ? item.sha1 : <span className="italic text-zinc-500">dossier</span>}
+                    {item.sha1 ? item.sha1 : <span className="italic text-zinc-500">{tr("dossier")}</span>}
                   </td>
 
                   <td className="py-2.5 px-4 text-zinc-500">
@@ -609,7 +600,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
                       {!item.isDir && (
                         <button
                           onClick={() => handleOpenFile(item)}
-                          title="Aperçu / Édition"
+                          title={tr("Aperçu / Édition")}
                           className="p-1 text-zinc-400 hover:text-sky-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -618,7 +609,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
                       {canEdit && (
                         <button
                           onClick={() => handleDeleteItem(item)}
-                          title="Supprimer"
+                          title={tr("Supprimer")}
                           className="p-1 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -637,13 +628,12 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
       <Modal
         isOpen={historyOpen}
         onClose={() => setHistoryOpen(false)}
-        title="Historique des modifications & Annulations (Undo)"
+        title={tr("Historique des modifications & Annulations (Undo)")}
         maxWidth="max-w-2xl"
       >
         <div className="space-y-4">
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Chaque modification, ajout ou suppression est tracé. Cliquez sur « Annuler » pour restaurer immédiatement l'état précédent d'un fichier.
-          </p>
+            {tr("Chaque modification, ajout ou suppression est tracé. Cliquez sur « Annuler » pour restaurer immédiatement l'état précédent d'un fichier.")} </p>
 
           {historyLoading ? (
             <div className="flex items-center justify-center p-8">
@@ -651,8 +641,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
             </div>
           ) : historyItems.length === 0 ? (
             <div className="text-center py-8 text-xs text-zinc-400">
-              Aucune modification enregistrée pour cet endpoint.
-            </div>
+              {tr("Aucune modification enregistrée pour cet endpoint.")} </div>
           ) : (
             <div className="space-y-2 max-h-96 overflow-y-auto pr-1 divide-y divide-zinc-100 dark:divide-zinc-800">
               {historyItems.map(item => {
@@ -667,32 +656,28 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
                       <div className="flex items-center space-x-2">
                         {isCreate && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
-                            + Ajouté
-                          </span>
+                            {tr("+ Ajouté")} </span>
                         )}
                         {isEdit && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300">
-                            ~ Modifié
-                          </span>
+                            {tr("~ Modifié")} </span>
                         )}
                         {isDelete && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300">
-                            - Supprimé
-                          </span>
+                            {tr("- Supprimé")} </span>
                         )}
                         {isUndo && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300">
-                            ↺ Annulé
-                          </span>
+                            {tr("↺ Annulé")} </span>
                         )}
                         <span className="font-mono text-zinc-900 dark:text-zinc-100 font-medium">
                           {item.relative_path}
                         </span>
                       </div>
                       <div className="flex items-center space-x-2 text-[11px] text-zinc-400">
-                        <span>Par {item.user_name || 'utilisateur'}</span>
+                        <span>{tr("Par")} {item.user_name || tr("utilisateur")}</span>
                         <span>•</span>
-                        <span>{new Date(item.created_at).toLocaleString('fr-FR')}</span>
+                        <span>{new Date(item.created_at).toLocaleString(locale())}</span>
                         {item.new_size ? (
                           <>
                             <span>•</span>
@@ -707,10 +692,10 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
                         onClick={() => handleUndo(item.id)}
                         disabled={undoingId === item.id}
                         className="px-2.5 py-1 text-xs font-medium border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg flex items-center space-x-1 transition disabled:opacity-50"
-                        title="Annuler cette modification et restaurer le fichier"
+                        title={tr("Annuler cette modification et restaurer le fichier")}
                       >
                         <RotateCcw className={`w-3.5 h-3.5 ${undoingId === item.id ? 'animate-spin' : ''}`} />
-                        <span>{undoingId === item.id ? 'Annulation...' : 'Annuler'}</span>
+                        <span>{undoingId === item.id ? tr("Annulation...") : tr("Annuler")}</span>
                       </button>
                     )}
                   </div>
@@ -725,14 +710,13 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
       <Modal
         isOpen={createFileOpen}
         onClose={() => setCreateFileOpen(false)}
-        title="Créer un nouveau fichier texte"
+        title={tr("Créer un nouveau fichier texte")}
         maxWidth="max-w-md"
       >
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Chemin relatif du fichier
-            </label>
+              {tr("Chemin relatif du fichier")} </label>
             <div className="flex items-center bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/80 rounded-lg px-2.5 py-1.5 text-xs font-mono">
               <span className="text-zinc-400 mr-1">{currentPrefix}</span>
               <input
@@ -745,7 +729,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
               />
             </div>
             <p className="text-[11px] text-zinc-400 mt-1">
-              Exemples : <code className="text-zinc-600 dark:text-zinc-300">options.txt</code>, <code className="text-zinc-600 dark:text-zinc-300">config/forge.cfg</code>, <code className="text-zinc-600 dark:text-zinc-300">kubejs/server_scripts/main.js</code>
+              {tr("Exemples :")} <code className="text-zinc-600 dark:text-zinc-300">options.txt</code>, <code className="text-zinc-600 dark:text-zinc-300">config/forge.cfg</code>, <code className="text-zinc-600 dark:text-zinc-300">kubejs/server_scripts/main.js</code>
             </p>
           </div>
 
@@ -755,16 +739,14 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
               onClick={() => setCreateFileOpen(false)}
               className="px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition"
             >
-              Annuler
-            </button>
+              {tr("Annuler")} </button>
             <button
               type="button"
               onClick={handleCreateNewFile}
               disabled={!newFilePath.trim()}
               className="px-3 py-1.5 text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition disabled:opacity-50"
             >
-              Continuer vers l'éditeur
-            </button>
+              {tr("Continuer vers l'éditeur")} </button>
           </div>
         </div>
       </Modal>
@@ -793,7 +775,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
             {canEdit && (
               <div className="flex items-center justify-between text-xs pb-2 border-b border-zinc-100 dark:border-zinc-800">
                 <span className="text-zinc-400">
-                  {isEditing ? 'Mode édition actif' : 'Mode lecture seule'}
+                  {isEditing ? tr("Mode édition actif") : tr("Mode lecture seule")}
                 </span>
                 <div className="flex items-center space-x-2">
                   {!isEditing ? (
@@ -802,7 +784,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
                       className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg text-zinc-700 dark:text-zinc-300 font-medium flex items-center space-x-1"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
-                      <span>Modifier</span>
+                      <span>{tr("Modifier")}</span>
                     </button>
                   ) : (
                     <button
@@ -813,7 +795,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
                       className="px-3 py-1 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-500 flex items-center space-x-1"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Réinitialiser</span>
+                      <span>{tr("Réinitialiser")}</span>
                     </button>
                   )}
                 </div>
@@ -835,15 +817,14 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
             {isEditing && (
               <div className="flex items-center justify-between pt-2">
                 <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  L'enregistrement publiera immédiatement une nouvelle version atomique et l'enregistrera dans l'historique des modifications.
-                </p>
+                  {tr("L'enregistrement publiera immédiatement une nouvelle version atomique et l'enregistrera dans l'historique des modifications.")} </p>
                 <button
                   onClick={handleSaveFile}
                   disabled={savingFile}
                   className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs rounded-xl shadow-2xs flex items-center space-x-1.5 disabled:opacity-60 transition"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{savingFile ? 'Enregistrement...' : 'Enregistrer & Publier'}</span>
+                  <span>{savingFile ? tr("Enregistrement...") : tr("Enregistrer & Publier")}</span>
                 </button>
               </div>
             )}

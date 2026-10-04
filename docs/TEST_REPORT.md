@@ -2,7 +2,7 @@
 
 ## Automated checks
 
-`npm run build`, `npm test` and `npm audit --audit-level=low` pass. The workspace suite contains **67 tests**: engine 15, desktop launcher 6, protocol 4, SDK 2, templates 2, backend 33 and frontend 5. The launcher test command now runs real lifecycle/settings tests instead of printing a success message. The npm audit reports zero known vulnerabilities for the installed dependency tree at validation time.
+`npm run build`, `npm test` and `npm audit --audit-level=low` pass. The workspace suite contains **74 tests**: engine 15, desktop launcher 6, protocol 4, SDK 2, templates 2, backend 34 and frontend 11. The launcher test command now runs real lifecycle/settings tests instead of printing a success message. The npm audit reports zero known vulnerabilities for the installed dependency tree at validation time.
 
 The frontend catalogue test exercises the actual frontend API client against the backend routes, covering their field names, Java requirements and validation payloads. Engine tests cover launch arguments, corrupted downloads, protected player data, path traversal and quoted additional JVM arguments.
 
@@ -39,6 +39,14 @@ between the production and validation databases.
 Rollback was tested against the isolated API: earlier file contents and a null
 direct-connect address were restored. Promotion was tested by retrieving the
 target's public files and checking that their URLs belonged to the target.
+
+## Web panel languages
+
+The browser check created an instance in English and visited overview, files, releases, settings and launcher configuration, plus dashboard, jobs and users. Switching to French and back preserved form values; the selected language survived a reload. API messages, dates and byte units use the selected language. Translation tests check dictionary coverage and dynamic values.
+
+## Installer and updates
+
+A clean source archive was installed with the actual installer in an isolated Compose project, separate database/storage and separate ports. Checks covered automatic private credential generation, administrator sign-in, cleared bootstrap environment and service readiness. Running the installer again preserved the environment, account and session, created a backup and reapplied migrations. The final API restart now waits for health before printing the initial credentials.
 
 ## Scope
 

@@ -1,3 +1,4 @@
+import { formatBytes } from '../i18n/format';
 import React, { useEffect, useState } from 'react';
 import {
   Server,
@@ -20,18 +21,12 @@ interface EndpointsPageProps {
   onNavigate: (tab: string, meta?: any) => void;
 }
 
-function formatBytes(bytes: number) {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+
 
 export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { t } = useTranslation();
+  const { tr, t } = useTranslation();
 
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -255,7 +250,7 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
                 className="inline-flex items-center text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:text-sky-600 dark:hover:text-sky-400 transition"
               >
                 <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
-                <span>Explorateur & Versions</span>
+                <span>{tr("Explorateur & Versions")}</span>
               </button>
 
               <div className="flex items-center space-x-1">
@@ -265,7 +260,7 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
                       setSelectedSourceEp(ep);
                       setPromoteModalOpen(true);
                     }}
-                    title="Promouvoir vers un autre endpoint"
+                    title={tr("Promouvoir vers un autre endpoint")}
                     className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
                   >
                     <Share2 className="w-3.5 h-3.5" />
@@ -295,12 +290,11 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
         <form onSubmit={handleCreate} className="space-y-4">
           <div>
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Nom d'affichage
-            </label>
+              {tr("Nom d'affichage")} </label>
             <input
               type="text"
               required
-              placeholder="ex: Create Adventures"
+              placeholder={tr("ex: Create Adventures")}
               value={newName}
               onChange={e => {
                 setNewName(e.target.value);
@@ -314,26 +308,24 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
 
           <div>
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Slug (Identifiant d'URL)
-            </label>
+              {tr("Slug (Identifiant d'URL)")} </label>
             <input
               type="text"
               required
               pattern="^[a-z0-9_-]+$"
-              placeholder="ex: create-adventures"
+              placeholder={tr("ex: create-adventures")}
               value={newSlug}
               onChange={e => setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
               className="w-full px-3 py-2 font-mono text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             />
             <p className="text-[11px] text-zinc-400 mt-1">
-              Minuscules, chiffres et tirets. Détermine l'URL publique <code className="font-mono text-zinc-700 dark:text-zinc-300">/{newSlug || '...'}/index.php</code>.
+              {tr("Minuscules, chiffres et tirets. Détermine l'URL publique")} <code className="font-mono text-zinc-700 dark:text-zinc-300">/{newSlug || '...'}/index.php</code>.
             </p>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Description (facultatif)
-            </label>
+              {tr("Description (facultatif)")} </label>
             <textarea
               rows={2}
               value={newDesc}
@@ -344,8 +336,7 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
 
           <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
             <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              Directives de synchronisation & nettoyage des dossiers
-            </span>
+              {tr("Directives de synchronisation & nettoyage des dossiers")} </span>
 
             <label className="flex items-center space-x-2 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
               <input
@@ -354,7 +345,7 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
                 onChange={e => setCleanupMods(e.target.checked)}
                 className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
               />
-              <span>Nettoyer le dossier <strong>mods</strong> (Recommandé)</span>
+              <span>{tr("Nettoyer le dossier")} <strong>mods</strong>  {tr("(Recommandé)")}</span>
             </label>
 
             <label className="flex items-center space-x-2 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
@@ -364,15 +355,14 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
                 onChange={e => setCleanupConfig(e.target.checked)}
                 className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
               />
-              <span>Nettoyer le dossier <strong>config</strong></span>
+              <span>{tr("Nettoyer le dossier")} <strong>config</strong></span>
             </label>
 
             {cleanupConfig && (
               <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-lg flex items-start space-x-2 text-xs text-amber-800 dark:text-amber-200">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-0.5" />
                 <span>
-                  Attention : Nettoyer <code>config</code> supprimera les modifications locales effectuées par les joueurs.
-                </span>
+                  {tr("Attention : Nettoyer")} <code>config</code>  {tr("supprimera les modifications locales effectuées par les joueurs.")} </span>
               </div>
             )}
           </div>
@@ -400,24 +390,22 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
       <Modal
         isOpen={promoteModalOpen}
         onClose={() => setPromoteModalOpen(false)}
-        title="Promouvoir / Cloner la version active"
+        title={tr("Promouvoir / Cloner la version active")}
       >
         <form onSubmit={handlePromote} className="space-y-4">
           <p className="text-xs text-zinc-600 dark:text-zinc-400">
-            Copiera la version active de <strong>{selectedSourceEp?.name}</strong> vers un autre endpoint (ex. Préproduction vers Production) et la publiera immédiatement de manière atomique.
-          </p>
+            {tr("Copiera la version active de")} <strong>{selectedSourceEp?.name}</strong>  {tr("vers un autre endpoint (ex. Préproduction vers Production) et la publiera immédiatement de manière atomique.")} </p>
 
           <div>
             <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Endpoint de destination
-            </label>
+              {tr("Endpoint de destination")} </label>
             <select
               required
               value={targetEndpointId}
               onChange={e => setTargetEndpointId(e.target.value)}
               className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-900 dark:focus:ring-zinc-100"
             >
-              <option value="">Sélectionnez un endpoint cible...</option>
+              <option value="">{tr("Sélectionnez un endpoint cible...")}</option>
               {endpoints
                 .filter(e => e.id !== selectedSourceEp?.id)
                 .map(e => (
@@ -441,7 +429,7 @@ export const EndpointsPage: React.FC<EndpointsPageProps> = ({ onNavigate }) => {
               disabled={formSubmitting || !targetEndpointId}
               className="px-4 py-1.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-semibold text-xs rounded-lg hover:bg-zinc-800 dark:hover:bg-white shadow-xs transition disabled:opacity-50"
             >
-              {formSubmitting ? t('common.loading') : 'Déployer'}
+              {formSubmitting ? t('common.loading') : tr("Déployer")}
             </button>
           </div>
         </form>

@@ -65,7 +65,7 @@ export const PackPanelLogo: React.FC<LogoProps> = ({
             Pack<span className="text-sky-500 dark:text-sky-400">Panel</span>
           </span>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium">
-            v1.0
+            v2.0
           </span>
         </div>
       )}

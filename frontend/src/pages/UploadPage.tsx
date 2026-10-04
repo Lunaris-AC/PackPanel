@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n';
 import React, { useState, useRef } from 'react';
 import * as tus from 'tus-js-client';
 import {
@@ -20,6 +21,7 @@ interface UploadPageProps {
 }
 
 export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess }) => {
+  const { tr } = useTranslation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
@@ -65,12 +67,12 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
         `/endpoints/${endpointId}/uploads/zip`,
         formData
       );
-      toast.success('Archive ZIP téléversée avec succès ! Traitement et extraction en cours.');
+      toast.success(tr("Archive ZIP téléversée avec succès ! Traitement et extraction en cours."));
       setActiveSessionId(res.sessionId);
       setPublished(true);
       onSuccess();
     } catch (err: any) {
-      toast.error(err.message || 'Échec du téléversement du ZIP');
+      toast.error(err.message || tr("Échec du téléversement du ZIP"));
     } finally {
       setUploading(false);
     }
@@ -109,7 +111,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
               isZip: 'false'
             },
             onError: error => {
-              console.error('Erreur tus:', error);
+              console.error(tr("Erreur tus:"), error);
               reject(error);
             },
             onProgress: (bytesUploaded, bytesTotal) => {
@@ -126,9 +128,9 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
         });
       }
 
-      toast.success('Tous les fichiers ont été transférés et mis en file de hachage.');
+      toast.success(tr("Tous les fichiers ont été transférés et mis en file de hachage."));
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors du transfert de fichiers');
+      toast.error(err.message || tr("Erreur lors du transfert de fichiers"));
     } finally {
       setUploading(false);
     }
@@ -141,12 +143,12 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
     setCommitting(true);
     try {
       await api.post(`/endpoints/${endpointId}/uploads/sessions/${activeSessionId}/commit`);
-      toast.success('Version assemblée et publiée avec succès !');
+      toast.success(tr("Version assemblée et publiée avec succès !"));
       setPublished(true);
       setActiveSessionId(null);
       onSuccess();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur publication version');
+      toast.error(err.message || tr("Erreur publication version"));
     } finally {
       setCommitting(false);
     }
@@ -157,11 +159,9 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
       {/* Mode Selection Card */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
         <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 mb-2">
-          Mode de déploiement
-        </h2>
+          {tr("Mode de déploiement")} </h2>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-          Choisissez la stratégie d'intégration des fichiers téléversés avec la version active.
-        </p>
+          {tr("Choisissez la stratégie d'intégration des fichiers téléversés avec la version active.")} </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label
@@ -182,11 +182,9 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
             />
             <div className="ml-3">
               <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Ajout & Remplacement ciblé
-              </span>
+                {tr("Ajout & Remplacement ciblé")} </span>
               <span className="block text-xs text-slate-500 mt-0.5">
-                Conserve tous les fichiers de la version active et met à jour uniquement les fichiers envoyés. Idéal pour des mises à jour de mods ou corrections mineures.
-              </span>
+                {tr("Conserve tous les fichiers de la version active et met à jour uniquement les fichiers envoyés. Idéal pour des mises à jour de mods ou corrections mineures.")} </span>
             </div>
           </label>
 
@@ -208,11 +206,9 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
             />
             <div className="ml-3">
               <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Remplacement complet (Snapshot)
-              </span>
+                {tr("Remplacement complet (Snapshot)")} </span>
               <span className="block text-xs text-slate-500 mt-0.5">
-                La nouvelle version contiendra exclusivement les fichiers téléversés dans ce lot. Supprime les fichiers absents de cet envoi.
-              </span>
+                {tr("La nouvelle version contiendra exclusivement les fichiers téléversés dans ce lot. Supprime les fichiers absents de cet envoi.")} </span>
             </div>
           </label>
         </div>
@@ -227,11 +223,9 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
               <UploadCloud className="w-6 h-6" />
             </div>
             <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Téléversement par lot (TUS Chunks)
-            </h3>
+              {tr("Téléversement par lot (TUS Chunks)")} </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Protocole de téléversement découpé en morceaux résistant aux déconnexions. Supporte l'envoi de plusieurs fichiers en conservant l'arborescence.
-            </p>
+              {tr("Protocole de téléversement découpé en morceaux résistant aux déconnexions. Supporte l'envoi de plusieurs fichiers en conservant l'arborescence.")} </p>
           </div>
 
           <div className="mt-6">
@@ -247,8 +241,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
               disabled={uploading}
               className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-semibold text-xs rounded-xl shadow transition disabled:opacity-60"
             >
-              Sélectionner des fichiers
-            </button>
+              {tr("Sélectionner des fichiers")} </button>
           </div>
         </div>
 
@@ -259,11 +252,9 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
               <FileArchive className="w-6 h-6" />
             </div>
             <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Import d'archive ZIP
-            </h3>
+              {tr("Import d'archive ZIP")} </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Extrait, valide contre les zip-bombs et les traversées de répertoires, vérifie que ce n'est pas un manifest Modrinth/CurseForge nu, et publie automatiquement.
-            </p>
+              {tr("Extrait, valide contre les zip-bombs et les traversées de répertoires, vérifie que ce n'est pas un manifest Modrinth/CurseForge nu, et publie automatiquement.")} </p>
           </div>
 
           <div className="mt-6">
@@ -279,8 +270,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
               disabled={uploading}
               className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs rounded-xl shadow transition disabled:opacity-60"
             >
-              Téléverser une archive ZIP
-            </button>
+              {tr("Téléverser une archive ZIP")} </button>
           </div>
         </div>
       </div>
@@ -290,7 +280,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-3 animate-in fade-in">
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-slate-800 dark:text-slate-200 truncate mr-2">
-              Téléversement en cours : {currentFileName}
+              {tr("Téléversement en cours :")} {currentFileName}
             </span>
             <span className="font-mono text-brand-600 font-bold">{progress}%</span>
           </div>
@@ -304,7 +294,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
 
           {totalCount > 1 && (
             <div className="text-[11px] text-slate-400">
-              Fichiers transférés : {processedCount} / {totalCount}
+              {tr("Fichiers transférés :")} {processedCount} / {totalCount}
             </div>
           )}
         </div>
@@ -319,11 +309,9 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
             </div>
             <div>
               <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Fichiers prêts pour publication
-              </h4>
+                {tr("Fichiers prêts pour publication")} </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Session active : <code className="font-mono text-[11px]">{activeSessionId}</code>. Vous pouvez continuer d'ajouter des fichiers ou finaliser la version.
-              </p>
+                {tr("Session active :")} <code className="font-mono text-[11px]">{activeSessionId}</code>{tr(". Vous pouvez continuer d'ajouter des fichiers ou finaliser la version.")} </p>
             </div>
           </div>
 
@@ -333,7 +321,7 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
             className="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-brand-600/30 flex items-center space-x-2 transition shrink-0 disabled:opacity-60"
           >
             <Play className="w-4 h-4 fill-white" />
-            <span>{committing ? 'Publication...' : 'Publier la version'}</span>
+            <span>{committing ? tr("Publication...") : tr("Publier la version")}</span>
           </button>
         </div>
       )}

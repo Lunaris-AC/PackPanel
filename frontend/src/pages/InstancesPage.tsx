@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n';
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -48,6 +49,7 @@ interface InstancesPageProps {
 }
 
 export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
+  const { tr } = useTranslation();
   const { toast } = useToast();
   const [instances, setInstances] = useState<MinecraftInstance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +78,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
       const res = await api.get('/v2/instances');
       setInstances(res.instances || []);
     } catch (err: any) {
-      toast.error('Erreur lors du chargement des instances: ' + (err.message || ''));
+      toast.error(tr("Erreur lors du chargement des instances: ") + (err.message || ''));
     } finally {
       setLoading(false);
     }
@@ -155,33 +157,33 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
     try {
       if (editingInstance) {
         await api.put(`/v2/instances/${editingInstance.id}`, formData);
-        toast.success('Instance mise à jour avec succès');
+        toast.success(tr("Instance mise à jour avec succès"));
       } else {
         await api.post('/v2/instances', formData);
-        toast.success('Instance Minecraft créée avec succès');
+        toast.success(tr("Instance Minecraft créée avec succès"));
       }
       setModalOpen(false);
       loadInstances();
     } catch (err: any) {
-      toast.error(err.message || 'Une erreur est survenue');
+      toast.error(err.message || tr("Une erreur est survenue"));
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Supprimer définitivement l'instance "${name}" ?`)) return;
+    if (!window.confirm(tr("Supprimer définitivement l'instance \"{0}\" ?", { 0: name }))) return;
     try {
       await api.delete(`/v2/instances/${id}`);
-      toast.success('Instance supprimée');
+      toast.success(tr("Instance supprimée"));
       loadInstances();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de la suppression');
+      toast.error(err.message || tr("Erreur lors de la suppression"));
     }
   };
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedUrl(id);
-    toast.success('URL copiée dans le presse-papiers');
+    toast.success(tr("URL copiée dans le presse-papiers"));
     setTimeout(() => setCopiedUrl(null), 2000);
   };
 
@@ -198,11 +200,9 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
         <div>
           <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
             <Box className="w-5 h-5 text-indigo-500" />
-            Instances Minecraft
-          </h1>
+            {tr("Instances Minecraft")} </h1>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Gérez vos versions Vanilla, Forge, NeoForge, Fabric et Quilt avec leurs règles de synchronisation et Java.
-          </p>
+            {tr("Gérez vos versions Vanilla, Forge, NeoForge, Fabric et Quilt avec leurs règles de synchronisation et Java.")} </p>
         </div>
 
         <button
@@ -210,8 +210,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
           className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold hover:bg-zinc-800 dark:hover:bg-zinc-200 transition shadow-xs"
         >
           <Plus className="w-4 h-4" />
-          Nouvelle Instance
-        </button>
+          {tr("Nouvelle Instance")} </button>
       </div>
 
       {/* Search Bar */}
@@ -221,7 +220,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Rechercher une instance..."
+          placeholder={tr("Rechercher une instance...")}
           className="w-full pl-9 pr-3 py-1.5 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-400 text-zinc-900 dark:text-zinc-100"
         />
       </div>
@@ -234,17 +233,15 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
       ) : filteredInstances.length === 0 ? (
         <div className="bg-white dark:bg-zinc-900 border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl p-10 text-center">
           <Box className="w-10 h-10 mx-auto text-zinc-400 mb-3" />
-          <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Aucune instance configurée</h3>
+          <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{tr("Aucune instance configurée")}</h3>
           <p className="text-xs text-zinc-500 mt-1 max-w-md mx-auto">
-            Créez votre première instance pour distribuer vos modpacks avec notre moteur indépendant.
-          </p>
+            {tr("Créez votre première instance pour distribuer vos modpacks avec notre moteur indépendant.")} </p>
           <button
             onClick={openCreateModal}
             className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500 transition"
           >
             <Plus className="w-4 h-4" />
-            Créer une instance
-          </button>
+            {tr("Créer une instance")} </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -291,12 +288,12 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
                     <span className="font-semibold text-zinc-800 dark:text-zinc-200">{inst.minecraft_version}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-zinc-400 block font-medium">JAVA REQUIS</span>
+                    <span className="text-[10px] text-zinc-400 block font-medium">{tr("JAVA REQUIS")}</span>
                     <span className="font-semibold text-zinc-800 dark:text-zinc-200">Java {inst.java_version}</span>
                   </div>
                   {inst.server_address && (
                     <div className="col-span-2 mt-1">
-                      <span className="text-[10px] text-zinc-400 block font-medium">SERVEUR DIRECT</span>
+                      <span className="text-[10px] text-zinc-400 block font-medium">{tr("SERVEUR DIRECT")}</span>
                       <span className="font-mono text-zinc-600 dark:text-zinc-400 text-[11px] truncate block">
                         {inst.server_address}
                       </span>
@@ -312,7 +309,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
                       <button
                         onClick={() => copyToClipboard(inst.manifest_url!, `v2-${inst.id}`)}
                         className="text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 transition ml-2"
-                        title="Copier l'URL V2"
+                        title={tr("Copier l'URL V2")}
                       >
                         {copiedUrl === `v2-${inst.id}` ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
@@ -328,21 +325,20 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
                   className="inline-flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
                 >
                   <FolderOpen className="w-3.5 h-3.5" />
-                  Gérer les fichiers
-                </button>
+                  {tr("Gérer les fichiers")} </button>
 
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={() => openEditModal(inst)}
                     className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
-                    title="Modifier l'instance"
+                    title={tr("Modifier l'instance")}
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => handleDelete(inst.id, inst.name)}
                     className="p-1.5 rounded-md text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                    title="Supprimer l'instance"
+                    title={tr("Supprimer l'instance")}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -357,27 +353,25 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editingInstance ? 'Modifier l\'instance' : 'Créer une nouvelle instance Minecraft'}
+        title={editingInstance ? tr("Modifier l'instance") : tr("Créer une nouvelle instance Minecraft")}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Nom de l'instance
-            </label>
+              {tr("Nom de l'instance")} </label>
             <input
               type="text"
               required
               value={formData.name}
               onChange={e => handleNameChange(e.target.value)}
-              placeholder="Ex: Survie Inferi 1.20"
+              placeholder={tr("Ex: Survie 1.20")}
               className="w-full px-3 py-2 text-xs bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-400 text-zinc-900 dark:text-zinc-100"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Slug d'accès (URL)
-            </label>
+              {tr("Slug d'accès (URL)")} </label>
             <input
               type="text"
               required
@@ -391,20 +385,19 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                Version Minecraft
-              </label>
+                {tr("Version Minecraft")} </label>
               <select
                 value={formData.minecraftVersion}
                 onChange={e => handleMcVersionChange(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100"
               >
-                <option value="1.21.1">1.21.1 (Dernière version)</option>
+                <option value="1.21.1">{tr("1.21.1 (Dernière version)")}</option>
                 <option value="1.21">1.21</option>
                 <option value="1.20.4">1.20.4</option>
-                <option value="1.20.1">1.20.1 (Très populaire)</option>
+                <option value="1.20.1">{tr("1.20.1 (Très populaire)")}</option>
                 <option value="1.19.4">1.19.4</option>
                 <option value="1.18.2">1.18.2</option>
-                <option value="1.16.5">1.16.5 (Standard moddé)</option>
+                <option value="1.16.5">{tr("1.16.5 (Standard moddé)")}</option>
                 <option value="1.12.2">1.12.2 (Forge)</option>
                 <option value="1.7.10">1.7.10</option>
               </select>
@@ -423,7 +416,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
                 <option value="forge">Forge</option>
                 <option value="neoforge">NeoForge</option>
                 <option value="quilt">Quilt</option>
-                <option value="vanilla">Vanilla (Sans loader)</option>
+                <option value="vanilla">{tr("Vanilla (Sans loader)")}</option>
               </select>
             </div>
           </div>
@@ -431,23 +424,21 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                Version Java requise
-              </label>
+                {tr("Version Java requise")} </label>
               <select
                 value={formData.javaVersion}
                 onChange={e => setFormData({ ...formData, javaVersion: Number(e.target.value) })}
                 className="w-full px-3 py-2 text-xs bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100"
               >
-                <option value={8}>Java 8 (1.16.5 et antérieur)</option>
-                <option value={17}>Java 17 (1.17 à 1.20.4)</option>
-                <option value={21}>Java 21 (1.20.5 et supérieur)</option>
+                <option value={8}>{tr("Java 8 (1.16.5 et antérieur)")}</option>
+                <option value={17}>{tr("Java 17 (1.17 à 1.20.4)")}</option>
+                <option value={21}>{tr("Java 21 (1.20.5 et supérieur)")}</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-                Arguments JVM
-              </label>
+                {tr("Arguments JVM")} </label>
               <input
                 type="text"
                 value={formData.javaArgs}
@@ -460,8 +451,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
 
           <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-              Connexion directe serveur (Optionnel)
-            </label>
+              {tr("Connexion directe serveur (Optionnel)")} </label>
             <input
               type="text"
               value={formData.serverAddress}
@@ -477,13 +467,12 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onNavigate }) => {
               onClick={() => setModalOpen(false)}
               className="px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition"
             >
-              Annuler
-            </button>
+              {tr("Annuler")} </button>
             <button
               type="submit"
               className="px-4 py-1.5 text-xs font-semibold bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition"
             >
-              {editingInstance ? 'Enregistrer' : 'Créer l\'instance'}
+              {editingInstance ? tr("Enregistrer") : tr("Créer l'instance")}
             </button>
           </div>
         </form>

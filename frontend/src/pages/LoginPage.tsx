@@ -170,7 +170,7 @@ export const LoginPage: React.FC = () => {
 
         {/* Footer info & Language Switcher */}
         <div className="mt-4 flex items-center justify-between text-[11px] text-zinc-400 px-2 font-mono">
-          <span>PackPanel v1.0.0</span>
+          <span>PackPanel v2.0.0</span>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setLanguage('fr')}

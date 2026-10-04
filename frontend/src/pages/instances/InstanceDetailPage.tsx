@@ -1,3 +1,5 @@
+import { formatBytes } from '../../i18n/format';
+import { useTranslation } from '../../i18n';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -27,15 +29,10 @@ import { VersionsPage } from '../VersionsPage';
 import { InstanceLauncherTab } from './InstanceLauncherTab';
 import { InstanceSettingsTab } from './InstanceSettingsTab';
 
-function formatBytes(bytes?: number | null) {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'Ko', 'Mo', 'Go', 'To'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
+
 
 export const InstanceDetailPage: React.FC = () => {
+  const { tr } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,7 +54,7 @@ export const InstanceDetailPage: React.FC = () => {
       const res = await api.get<{ instance: MinecraftInstance }>(`/v2/instances/${id}`);
       setInstance(res.instance);
     } catch (err: any) {
-      toast.error('Instance introuvable: ' + (err.message || ''));
+      toast.error(tr("Instance introuvable: ") + (err.message || ''));
       navigate('/instances');
     } finally {
       setLoading(false);
@@ -72,21 +69,21 @@ export const InstanceDetailPage: React.FC = () => {
     if (!instance?.manifest_url) return;
     navigator.clipboard.writeText(instance.manifest_url);
     setCopiedUrl(true);
-    toast.success('URL du manifeste PackPanel copiée !');
+    toast.success(tr("URL du manifeste PackPanel copiée !"));
     setTimeout(() => setCopiedUrl(false), 2000);
   };
 
   const handlePublish = async () => {
     if (!instance) return;
-    if (!window.confirm(`Publier une nouvelle version pour "${instance.name}" ? Cela figera les fichiers actuels et la configuration de jeu.`)) return;
+    if (!window.confirm(tr("Publier une nouvelle version pour \"{0}\" ? Cela figera les fichiers actuels et la configuration de jeu.", { 0: instance.name }))) return;
 
     try {
       setPublishing(true);
       await api.post(`/v2/instances/${instance.id}/publish`);
-      toast.success('Nouvelle version publiée avec succès ! Le manifeste packpanel.json est à jour.');
+      toast.success(tr("Nouvelle version publiée avec succès ! Le manifeste packpanel.json est à jour."));
       loadInstance();
     } catch (err: any) {
-      toast.error(err.message || 'Erreur lors de la publication');
+      toast.error(err.message || tr("Erreur lors de la publication"));
     } finally {
       setPublishing(false);
     }
@@ -97,7 +94,7 @@ export const InstanceDetailPage: React.FC = () => {
       <div className="py-24 flex justify-center items-center">
         <div className="flex flex-col items-center space-y-3">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-          <span className="text-xs text-zinc-400">Chargement de l'instance...</span>
+          <span className="text-xs text-zinc-400">{tr("Chargement de l'instance...")}</span>
         </div>
       </div>
     );
@@ -117,8 +114,7 @@ export const InstanceDetailPage: React.FC = () => {
               className="inline-flex items-center text-xs font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 mb-1 transition"
             >
               <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-              Toutes les instances
-            </button>
+              {tr("Toutes les instances")} </button>
 
             <div className="flex flex-wrap items-center gap-2.5">
               <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
@@ -146,16 +142,15 @@ export const InstanceDetailPage: React.FC = () => {
                 </span>
               ) : (
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                  Brouillon non publié
-                </span>
+                  {tr("Brouillon non publié")} </span>
               )}
             </div>
 
             <p className="text-xs text-zinc-500 font-mono">
-              Slug : <span className="text-indigo-600 dark:text-indigo-400 font-bold">{instance.slug}</span>
+              {tr("Slug :")} <span className="text-indigo-600 dark:text-indigo-400 font-bold">{instance.slug}</span>
               {instance.server_address && (
                 <span className="ml-3 text-zinc-400">
-                  • Serveur : <strong className="text-zinc-700 dark:text-zinc-300 font-mono">{instance.server_address}</strong>
+                  {tr("• Serveur :")} <strong className="text-zinc-700 dark:text-zinc-300 font-mono">{instance.server_address}</strong>
                 </span>
               )}
             </p>
@@ -173,7 +168,7 @@ export const InstanceDetailPage: React.FC = () => {
               }`}
             >
               <Send className="w-3.5 h-3.5" />
-              {publishing ? 'Publication...' : hasPendingChanges ? 'Publier les modifications' : 'Publier une version'}
+              {publishing ? tr("Publication...") : hasPendingChanges ? tr("Publier les modifications") : tr("Publier une version")}
             </button>
           </div>
         </div>
@@ -181,11 +176,11 @@ export const InstanceDetailPage: React.FC = () => {
         {/* Deep-Linked Tabs */}
         <div className="flex items-center space-x-1 border-t border-zinc-100 dark:border-zinc-800/80 mt-6 pt-3 overflow-x-auto text-xs font-semibold">
           {[
-            { id: 'overview', label: "Vue d'ensemble", icon: LayoutDashboard },
-            { id: 'files', label: 'Fichiers & Mods', icon: FolderOpen },
-            { id: 'publications', label: 'Publications & Rollback', icon: History },
-            { id: 'launcher', label: 'Launcher personnalisé', icon: Monitor },
-            { id: 'settings', label: 'Paramètres', icon: Settings }
+            { id: 'overview', label: tr("Vue d'ensemble"), icon: LayoutDashboard },
+            { id: 'files', label: tr("Fichiers & Mods"), icon: FolderOpen },
+            { id: 'publications', label: tr("Publications & Rollback"), icon: History },
+            { id: 'launcher', label: tr("Launcher personnalisé"), icon: Monitor },
+            { id: 'settings', label: tr("Paramètres"), icon: Settings }
           ].map(tab => {
             const Icon = tab.icon;
             const active = subTab === tab.id;
@@ -216,12 +211,11 @@ export const InstanceDetailPage: React.FC = () => {
               <div className="flex items-start space-x-2.5">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
                 <div>
-                  <span className="font-bold block">Des modifications non publiées sont en attente</span>
+                  <span className="font-bold block">{tr("Des modifications non publiées sont en attente")}</span>
                   <p className="text-amber-700/80 dark:text-amber-300/80 mt-0.5">
-                    {instance.hasDraftConfigChanges && 'Les paramètres de jeu (moteur, Java ou serveur) ont été modifiés. '}
-                    {(instance.pendingChangesCount || 0) > 0 && `${instance.pendingChangesCount} fichier(s) téléversé(s) en attente d'incorporation. `}
-                    Vos joueurs utilisent actuellement la version figée active.
-                  </p>
+                    {instance.hasDraftConfigChanges && tr("Les paramètres de jeu (moteur, Java ou serveur) ont été modifiés. ")}
+                    {(instance.pendingChangesCount || 0) > 0 && tr("{0} fichier(s) téléversé(s) en attente d'incorporation. ", { 0: instance.pendingChangesCount || 0 })}
+                    {tr("Vos joueurs utilisent actuellement la version figée active.")} </p>
                 </div>
               </div>
               <button
@@ -229,7 +223,7 @@ export const InstanceDetailPage: React.FC = () => {
                 disabled={publishing}
                 className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg transition shrink-0 shadow-2xs"
               >
-                {publishing ? 'Publication...' : 'Publier maintenant'}
+                {publishing ? tr("Publication...") : tr("Publier maintenant")}
               </button>
             </div>
           )}
@@ -237,27 +231,26 @@ export const InstanceDetailPage: React.FC = () => {
           {/* Quick Metrics KPI */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Version active</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">{tr("Version active")}</span>
               <p className="text-xl font-bold font-mono text-zinc-900 dark:text-zinc-100 mt-1">
-                {instance.active_release_id || 'Aucune'}
+                {instance.active_release_id || tr("Aucune")}
               </p>
               <p className="text-[11px] text-zinc-500 mt-1">
-                {isPublished ? 'Distribuée aux joueurs' : 'Brouillon initial'}
+                {isPublished ? tr("Distribuée aux joueurs") : tr("Brouillon initial")}
               </p>
             </div>
 
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Contenu publié</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">{tr("Contenu publié")}</span>
               <p className="text-xl font-bold font-mono text-zinc-900 dark:text-zinc-100 mt-1">
-                {instance.active_total_files || 0} fichiers
-              </p>
+                {instance.active_total_files || 0}  {tr("fichiers")} </p>
               <p className="text-[11px] text-zinc-500 mt-1">
-                Volume : {formatBytes(instance.active_total_bytes)}
+                {tr("Volume :")} {formatBytes(instance.active_total_bytes)}
               </p>
             </div>
 
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Moteur de jeu</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">{tr("Moteur de jeu")}</span>
               <p className="text-xl font-bold font-mono text-zinc-900 dark:text-zinc-100 mt-1 capitalize">
                 {instance.loader_type}
               </p>
@@ -267,12 +260,12 @@ export const InstanceDetailPage: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">Launcher dédié</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">{tr("Launcher dédié")}</span>
               <p className="text-xl font-bold font-mono text-zinc-900 dark:text-zinc-100 mt-1">
-                {instance.launcher_enabled ? 'Configuré' : 'Désactivé'}
+                {instance.launcher_enabled ? tr("Configuré") : tr("Désactivé")}
               </p>
               <p className="text-[11px] text-zinc-500 mt-1">
-                {instance.launcher_enabled ? (instance.launcher?.template || 'Community') : 'Optionnel'}
+                {instance.launcher_enabled ? (instance.launcher?.template || 'Community') : tr("Optionnel")}
               </p>
             </div>
           </div>
@@ -282,16 +275,14 @@ export const InstanceDetailPage: React.FC = () => {
             <div>
               <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
                 <Send className="w-4 h-4 text-indigo-500" />
-                Distribution du manifeste packpanel.json
-              </h2>
+                {tr("Distribution du manifeste packpanel.json")} </h2>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Ce manifeste immuable est interrogé automatiquement par le launcher PackPanel pour synchroniser les fichiers et lancer le jeu.
-              </p>
+                {tr("Ce manifeste immuable est interrogé automatiquement par le launcher PackPanel pour synchroniser les fichiers et lancer le jeu.")} </p>
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200/80 dark:border-zinc-800 p-3 rounded-xl text-xs font-mono">
               <span className="text-zinc-700 dark:text-zinc-300 truncate flex-1 select-all">
-                {instance.manifest_url || 'URL disponible dès la première publication'}
+                {instance.manifest_url || tr("URL disponible dès la première publication")}
               </span>
               {instance.manifest_url && (
                 <button
@@ -299,7 +290,7 @@ export const InstanceDetailPage: React.FC = () => {
                   className="px-3 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 transition flex items-center justify-center gap-1.5 shrink-0"
                 >
                   {copiedUrl ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedUrl ? 'Copié !' : 'Copier'}</span>
+                  <span>{copiedUrl ? tr("Copié !") : tr("Copier")}</span>
                 </button>
               )}
             </div>
@@ -313,12 +304,11 @@ export const InstanceDetailPage: React.FC = () => {
             >
               <div>
                 <FolderOpen className="w-6 h-6 text-indigo-500 mb-2" />
-                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Explorateur de fichiers</h3>
-                <p className="text-xs text-zinc-500 mt-1">Glissez-déposez vos mods, modifiez vos fichiers de config et gérez vos dossiers.</p>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{tr("Explorateur de fichiers")}</h3>
+                <p className="text-xs text-zinc-500 mt-1">{tr("Glissez-déposez vos mods, modifiez vos fichiers de config et gérez vos dossiers.")}</p>
               </div>
               <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-4 flex items-center gap-1">
-                Ouvrir l'explorateur →
-              </span>
+                {tr("Ouvrir l'explorateur →")} </span>
             </div>
 
             <div
@@ -327,12 +317,11 @@ export const InstanceDetailPage: React.FC = () => {
             >
               <div>
                 <Monitor className="w-6 h-6 text-indigo-500 mb-2" />
-                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Personnaliser le Launcher</h3>
-                <p className="text-xs text-zinc-500 mt-1">Définissez vos logos, couleurs, modèle visuel et générez les exécutables des joueurs.</p>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{tr("Personnaliser le Launcher")}</h3>
+                <p className="text-xs text-zinc-500 mt-1">{tr("Définissez vos logos, couleurs, modèle visuel et générez les exécutables des joueurs.")}</p>
               </div>
               <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-4 flex items-center gap-1">
-                Gérer le launcher →
-              </span>
+                {tr("Gérer le launcher →")} </span>
             </div>
 
             <div
@@ -341,12 +330,11 @@ export const InstanceDetailPage: React.FC = () => {
             >
               <div>
                 <History className="w-6 h-6 text-indigo-500 mb-2" />
-                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Historique & Rollback</h3>
-                <p className="text-xs text-zinc-500 mt-1">Visualisez les versions antérieures et revenez en arrière en un clic si nécessaire.</p>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{tr("Historique & Rollback")}</h3>
+                <p className="text-xs text-zinc-500 mt-1">{tr("Visualisez les versions antérieures et revenez en arrière en un clic si nécessaire.")}</p>
               </div>
               <span className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-4 flex items-center gap-1">
-                Voir l'historique →
-              </span>
+                {tr("Voir l'historique →")} </span>
             </div>
           </div>
         </div>
