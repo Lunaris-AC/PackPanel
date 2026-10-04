@@ -18,10 +18,27 @@ A Windows ZIP was built by the server and downloaded. Its SHA-256 was checked. I
 | 1.21.1 | Forge | 52.1.0 | 21 |
 | 1.21.1 | NeoForge | 21.1.255 | 21 |
 | 1.21.1 | Quilt | 0.24.0 | 21 |
+| 1.21.1 | Vanilla | — | 21 |
 
 The downloaded launcher was also exercised through initial pack retrieval and a second launch after publication of changed content. The updated configuration was retrieved, an obsolete file under `mods` was removed, and a sentinel under `saves` remained intact.
 
-The simplified client exposes nickname/Jouer and a settings tab. Persistent RAM and quoted custom JVM arguments are checked by `scripts/check-downloaded-launcher.cjs`, including the arguments received by the actual Java process. The game directory action is restricted to the embedded instance's directory.
+The simplified client exposes nickname/Jouer and a settings tab. Persistent RAM and quoted custom JVM arguments are checked by `scripts/check-downloaded-launcher.cjs`, including the arguments received by the actual Java process. The game directory action is restricted to the embedded instance's directory. French/English UI, localized progress, language persistence and the custom window controls were exercised in the packaged application.
+
+After production deployment, the instance page's actual Download button was
+clicked in a browser. That ZIP matched the server SHA-256 and was used for
+initial launch, a published update and a second launch. Vanilla and all four
+modloaders in the matrix above were then started through the same production
+download. Public files were retrieved through the real HTTPS CDN.
+
+A full backup and restore was exercised on the isolated deployment. The
+legacy-database upgrade was tested with the upload uniqueness constraint
+removed, followed by two migrations to verify repeatability. Production
+uploads confirmed the repaired constraint. Column definitions were compared
+between the production and validation databases.
+
+Rollback was tested against the isolated API: earlier file contents and a null
+direct-connect address were restored. Promotion was tested by retrieving the
+target's public files and checking that their URLs belonged to the target.
 
 ## Scope
 

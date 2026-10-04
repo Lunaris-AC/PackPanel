@@ -1,0 +1,34 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const assert = require('node:assert/strict');
+const { chromium } = require('playwright');
+const directory = process.env.PACKPANEL_CHECK_DIR;
+if (!directory) throw new Error('Set PACKPANEL_CHECK_DIR to the validation directory.');
+const session = JSON.parse(fs.readFileSync(path.join(directory, 'validation-session.json')));
+let browser;
+(async () => {
+  browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ acceptDownloads: true });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(session.base);
+  await page.evaluate(token => {
+    localStorage.setItem('packpanel_token', token);
+    localStorage.setItem('packpanel_lang', 'fr');
+    localStorage.setItem('packpanel_setup_completed', 'true');
+  }, session.token);
+  await page.goto(session.base + '/instances/' + session.instance.id + '/launcher');
+  const button = page.getByRole('button', { name: 'Télécharger', exact: true }).first();
+  await button.waitFor();
+  const downloaded = page.waitForEvent('download', { timeout: 120000 });
+  await button.click();
+  const download = await downloaded;
+  const artifact = path.join(directory, 'downloaded-launcher.zip');
+  await download.saveAs(artifact);
+  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(artifact)).digest('hex'), session.build.artifactSha256);
+  assert.deepEqual(errors, []);
+  await page.screenshot({ path: path.join(directory, 'packpanel-production-instance-download.png'), fullPage: true });
+  console.log('PASS: actual download button on the instance page; saved Windows artifact matches the server SHA-256.');
+  await browser.close();
+})().catch(async error => { console.error(error); if (browser) await browser.close().catch(() => {}); process.exitCode = 1; });

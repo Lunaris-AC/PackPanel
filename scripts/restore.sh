@@ -27,6 +27,6 @@ docker compose start api worker
 ADMIN_ADDRESS=$(docker compose port nginx 8080 | head -n 1)
 if [ -n "$ADMIN_ADDRESS" ]; then
   ADMIN_PORT=${ADMIN_ADDRESS##*:}
-  curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 --max-time 5 "http://127.0.0.1:$ADMIN_PORT/api/health" >/dev/null
+  curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 1 --max-time 5 "http://127.0.0.1:$ADMIN_PORT/api/health" >/dev/null
 fi
 echo 'Database, storage and launcher artifacts restored. The archived environment.env is retained for manual credential recovery.'

@@ -2,6 +2,11 @@
 
 Ce document détaille l'architecture globale, la topologie des processus, les flux de données et les principes de conception de **PackPanel**.
 
+La version actuelle utilise Node.js 24 et Fastify 5. Le launcher Electron
+embarque sa configuration et son moteur, s’associe à une seule instance et
+propose une interface FR/EN. Le parcours validé est offline ; voir le
+[rapport de tests](TEST_REPORT.md) pour les versions effectivement lancées.
+
 ---
 
 ## 1. Topologie Globale des Composants

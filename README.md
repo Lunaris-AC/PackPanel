@@ -51,4 +51,11 @@ PACKPANEL_CHECK_DIR=/path/to/validation-directory node scripts/check-downloaded-
 
 The desktop check opens the packaged Electron executable, sets RAM and quoted JVM arguments, starts Minecraft, publishes an update, starts Minecraft again, and checks cleanup and preservation of player data. Screenshots and logs are saved in the validation directory. API checks alone do not establish desktop launch success.
 
+The same validation directory can be used with `check-panel-download.cjs` to
+download through the instance page, `check-permissions.cjs` to exercise viewer
+and operator restrictions, and `check-loader-startup.cjs` to start Vanilla,
+Forge, NeoForge and Quilt through the downloaded client. The browser check
+requires `npx playwright install chromium`. Use `check-release-history.cjs`
+against the isolated deployment to validate rollback and promotion.
+
 For backups, restoration and rollback, see [operations](docs/OPERATIONS.md).

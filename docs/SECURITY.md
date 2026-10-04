@@ -1,96 +1,61 @@
-# Modèle de Sécurité & RBAC - PackPanel
+# Sécurité et permissions
 
-Ce document détaille les garanties, politiques et mécanismes de sécurité intégrés dans **PackPanel**.
+## Administration
 
----
+Les mots de passe sont hachés avec Argon2id. Les sessions utilisent un identifiant
+et un jeton aléatoire dont seule l’empreinte est conservée en base. Les entrées
+malformées sont rejetées. Les changements de mot de passe révoquent les autres
+sessions du compte.
 
-## 1. Authentification & Contrôle d'Accès (RBAC)
+L’API accepte un cookie HttpOnly/SameSite ainsi qu’un jeton Bearer. Le panel
+conserve aussi ce jeton dans localStorage : le cookie ne constitue donc pas,
+à lui seul, une protection contre un script exécuté dans le panel. Utilisez
+HTTPS pour l’administration exposée sur Internet ; les cookies Secure de
+production ne sont pas disponibles lors des tests LAN en HTTP.
 
-### 1.1 Hachage Cryptographique Argon2id
-Tous les mots de passe sont stockés sous forme de hachages **Argon2id**, la fonction de dérivation recommandée par l'OWASP :
-- `type: argon2id`
-- `memoryCost: 65536` (64 Mio de mémoire par dérivation)
-- `timeCost: 3` (3 itérations)
-- `parallelism: 4`
-- Protection contre les attaques temporelles (*timing attacks*) via comparaison en temps constant.
+Les requêtes mutantes avec une origine ou un referer non autorisé sont refusées.
+Les clients API authentifiés peuvent envoyer des requêtes sans ces en-têtes.
+La configuration des domaines est persistée par une route réservée à
+l’administrateur. La distribution publique sur le port 8081 expose des fichiers
+statiques et bloque les routes d’administration/API.
 
-### 1.2 Gestion des Sessions & Protection CSRF
-- Les sessions utilisent des identifiants et jetons aléatoires de 256 bits (`crypto.randomBytes(32)`).
-- Les cookies de session appliquent `HttpOnly` (inaccessible au JavaScript, protection XSS) et `SameSite=Lax`.
-- **Validation Stricte d'Origine (CSRF)** : Le middleware `enforceOriginCheck` valide systématiquement l'en-tête `Origin` ou `Referer` de toutes les requêtes mutantes (`POST`, `PUT`, `DELETE`, `PATCH`). Les requêtes provenant d'origines non autorisées sont immédiatement rejetées avec un code HTTP 403.
-- Révocation de sessions : lors du changement de mot de passe, toutes les autres sessions actives de l'utilisateur sont immédiatement révoquées en base.
+## Rôles
 
-### 1.3 Double Authentification (2FA / TOTP) & Codes de Secours
-- Conforme aux standards RFC 6238 (TOTP SHA-1, fenêtre de 30 secondes, tolérance d'une période).
-- **Hachage HMAC-SHA256 des Codes de Secours** : Les codes de secours générés (`ABCD-1234`) ne sont **jamais stockés en clair** en base de données. Chaque code est haché avec l'identifiant unique de l'utilisateur comme sel cryptographique.
-- **Anti-Force-Brute** : La validation des codes 2FA est soumise au même limiteur de débit que l'authentification principale, empêchant le brute-force des codes TOTP à 6 chiffres.
+- **Lecteur** : consultation, sans modification ni publication.
+- **Opérateur** : les modifications d’une instance ou de ses fichiers exigent
+  `can_write` sur son endpoint ; publication, rollback et promotion exigent
+  `can_publish`. La promotion vérifie aussi les droits sur la cible.
+- **Administrateur** : gestion des utilisateurs, configuration système et
+  annulation des tâches, avec accès complet aux endpoints.
 
-### 1.3 Matrice des Rôles (RBAC)
+Les permissions sont vérifiées côté serveur, y compris pour les publications
+immédiates depuis l’éditeur et les uploads TUS. Les tests réels couvrent les
+refus lecteur/opérateur, les droits d’écriture sans publication et les variantes
+d’URL avec une chaîne de requête.
 
-| Fonctionnalité | Lecteur (`viewer`) | Opérateur (`operator`) | Administrateur (`admin`) |
-| :--- | :---: | :---: | :---: |
-| Visualiser le tableau de bord et les statistiques | ✓ | ✓ | ✓ |
-| Explorer les fichiers et consulter les manifestes | ✓ | ✓ | ✓ |
-| Comparer les versions (*Diff*) | ✓ | ✓ | ✓ |
-| Téléverser des fichiers / ZIP (TUS, direct) | ✗ | ✓ | ✓ |
-| Éditer ou supprimer des fichiers dans l'explorateur | ✗ | ✓ | ✓ |
-| Publier une version ou effectuer un Rollback | ✗ | ✓ | ✓ |
-| Créer, modifier ou promouvoir un endpoint | ✗ | ✓ | ✓ |
-| Gérer les utilisateurs (création, rôles, suppression)| ✗ | ✗ | ✓ |
-| Consulter le journal d'audit complet | ✗ | ✗ | ✓ |
-| Annuler des tâches de fond | ✗ | ✓ | ✓ |
+## Fichiers et client
 
----
+Les uploads sont associés à une session ouverte appartenant au bon utilisateur
+et endpoint. Les chemins sont normalisés et validés ; l’extraction ZIP limite
+le nombre de fichiers et le volume extrait. Les objets sont hachés avant
+publication. Les versions publiées utilisent des fichiers CAS et des manifestes
+dont les adresses correspondent à l’endpoint cible.
 
-## 2. Sécurité des Téléversements & Ingestion de Fichiers
+Le moteur du launcher valide les chemins, refuse les sorties du dossier de jeu
+et les liens symboliques dangereux, vérifie les téléchargements et conserve
+l’ancien fichier si un transfert est corrompu. Les dossiers et fichiers
+personnels obligatoirement protégés restent protégés même si le manifeste
+omet cette règle. Le ramasse-miettes prend en compte les versions, uploads,
+historiques et références aux images avant de supprimer un objet.
 
-### 2.1 Protection Contre les Bombes ZIP (*Zip-Bomb Defense*)
-Lors de l'extraction d'une archive ZIP :
-- **Taille Décompressée Maximale** : Le décompresseur comptabilise le flux en continu. Si le volume total extrait dépasse `MAX_ZIP_EXTRACT_SIZE_MIB` (défaut : 4096 Mo), l'extraction est immédiatement avortée et les fichiers temporaires purgés.
-- **Nombre Maximal d'Entrées** : Si l'archive contient plus de `MAX_ZIP_ENTRY_COUNT` (défaut : 20 000 fichiers), le traitement est rejeté.
-- **Ratio d'Expansion Anormal** : Détection des ratios de compression extrêmes.
+Le renderer Electron utilise contextIsolation, sandbox et aucune intégration
+Node.js. Son accès passe par des opérations IPC limitées ; ouvrir les fichiers
+du jeu ouvre uniquement le dossier de l’instance embarquée. La navigation et
+les liens externes sont limités aux liens web prévus.
 
-### 2.2 Prévention des Traversées de Répertoires (*Path Traversal*)
-Tous les chemins de fichiers (qu'ils proviennent d'un flux TUS, d'un upload multipart ou d'une entrée ZIP) passent par `assertSanitizedRelativePath()` :
-- Rejet catégorique de `..` et `.` dans tous les segments.
-- Suppression des barres obliques de début et normalisation en séparateurs UNIX `/`.
-- Interdiction des octets nuls (`\0`) et caractères de contrôle CRLF.
+Les scripts de sauvegarde stockent base, fichiers, builds et environnement dans
+des archives privées. Les secrets, mots de passe et sessions de validation
+ne doivent pas être consignés dans les documents du dépôt.
 
-### 2.3 Protection de Compatibilité Client Windows
-Puisque les clients Minecraft s'exécutent très fréquemment sur Windows, le serveur valide et neutralise les contraintes spécifiques à cet OS :
-- **Noms Réservés Windows** : Rejet des noms `CON`, `PRN`, `AUX`, `NUL`, `COM1-COM9`, `LPT1-LPT9` (avec ou sans extension).
-- **Caractères Interdits** : Rejet des caractères `< > : " | ? *`.
-- **Espaces et Points Finaux** : Rejet des segments se terminant par un point ou un espace (inaccessibles sous Windows).
-- **Détection des Collisions de Casse** : Si un lot contient simultanément `config/JEI/recipe.json` et `config/jei/recipe.json`, le lot est rejeté avec une erreur explicite pour éviter l'écrasement aléatoire sur le poste du joueur.
-
-### 2.4 Détection des Archives Nues (Manifestes CurseForge / Modrinth)
-Un piège courant consiste à téléverser le petit fichier ZIP de modpack exporté depuis CurseForge (contenant uniquement `manifest.json` sans les fichiers `.jar` de mods). PackPanel analyse l'archive à l'ingestion : s'il s'agit d'un tel export sans mod réel, l'import est rejeté avec un message d'avertissement clair guidant l'utilisateur.
-
-### 2.5 Verrous Transactionnels (PostgreSQL Advisory Locks)
-Lors de la création et publication d'une version :
-- Un verrou exclusif au niveau de l'endpoint est posé via `SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || endpoint_id))`.
-- Empêche toute concurrence sur l'attribution de `MAX(version_num) + 1` ou l'écrasement de répertoires physiques lors de publications simultanées.
-- Les fichiers temporaires d'écriture atomique utilisent des noms uniques isolés (`index.php.tmp.<pid>.<time>.<nonce>`).
-
-### 2.6 Prévention des Collisions de Manifestes
-- Le manifeste interne de la release est enregistré sous `.packpanel_manifest.json`.
-- Si le modpack téléversé contient son propre fichier `manifest.json` à la racine (ex: manifest CurseForge ou fabric), il n'est **jamais écrasé** par le manifeste MineLaunched.
-- Les clients MineLaunched lisent exclusivement le point d'entrée `index.php`.
-
----
-
-## 3. Sécurité Réseau & Conteneurs
-
-1. **Isolation Réseau Docker** :
-   - Les conteneurs `postgres`, `api` et `worker` ne publient **aucun port sur l'hôte**.
-   - Ils communiquent sur un sous-réseau interne privé `packpanel-internal`.
-   - Seul `nginx` publie les ports `8080` et `8081`.
-
-2. **Privilèges et Sockets** :
-   - Aucun conteneur ne tourne avec l'indicateur `--privileged`.
-   - Le socket Docker de l'hôte (`/var/run/docker.sock`) **n'est jamais monté** dans aucun conteneur applicatif.
-
-3. **Protection des Secrets** :
-   - Aucun mot de passe ni clé secrète n'est écrit dans le code source ou dans les images Docker.
-   - Les variables sensibles sont injectées via le fichier `.env` sur le serveur avec des permissions restrictives (`chmod 600`).
-   - Les fichiers temporaires d'upload sont systématiquement nettoyés lors des échecs ou après le transfert vers le CAS.
+Ces contrôles décrivent l’implémentation et la [validation effectuée](TEST_REPORT.md).
+Le mode joueur validé est offline ; il ne fournit pas une identité Microsoft.
