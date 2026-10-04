@@ -49,7 +49,7 @@ describe('Version Catalog & Java Requirement Resolver', () => {
 
   describe('NeoForge prefix parser', () => {
     it('correctly maps MC version to NeoForge prefix', () => {
-      expect(getNeoForgePrefixForMinecraft('1.20.1')).toBe('20.1.');
+      expect(getNeoForgePrefixForMinecraft('1.20.1')).toBeNull();
       expect(getNeoForgePrefixForMinecraft('1.20.4')).toBe('20.4.');
       expect(getNeoForgePrefixForMinecraft('1.21.1')).toBe('21.1.');
       expect(getNeoForgePrefixForMinecraft('1.19.4')).toBeNull(); // NeoForge did not exist before 1.20.1

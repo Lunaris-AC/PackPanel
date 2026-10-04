@@ -35,7 +35,7 @@ export function buildMineLaunchedManifest(
   cleanupRules: string[] = ['mods']
 ): MineLaunchedEntry[] {
   // baseUrl format: https://<FILES_FQDN>/<slug>/releases/<release-id>/
-  const baseUrl = `https://${filesFqdn}/${endpointSlug}/releases/${releaseId}`;
+  const baseUrl = `${/^https?:\/\//.test(filesFqdn) ? filesFqdn.replace(/\/+$/, '') : `https://${filesFqdn}`}/${endpointSlug}/releases/${releaseId}`;
 
   // Collect all explicitly mentioned directories and infer implicit parent directories
   const directories = new Set<string>();
@@ -157,8 +157,8 @@ export function validateMineLaunchedContract(manifestData: any): { valid: boolea
     }
     seenPaths.add(item.path);
 
-    if (typeof item.url !== 'string' || !item.url.startsWith('https://')) {
-      errors.push(`Entrée ${i} : URL HTTPS absolue manquante ou invalide pour "${item.path}"`);
+    if (typeof item.url !== 'string' || !/^https?:\/\//.test(item.url)) {
+      errors.push(`Entrée ${i} : URL HTTP(S) absolue manquante ou invalide pour "${item.path}"`);
     }
 
     if (item.checksumSHA1 === false) {

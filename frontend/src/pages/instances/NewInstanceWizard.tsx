@@ -42,6 +42,8 @@ export const NewInstanceWizard: React.FC = () => {
   const [availableLoaders, setAvailableLoaders] = useState<LoaderCompatibilitySummary[]>([]);
   const [loaderVersions, setLoaderVersions] = useState<LoaderVersionEntry[]>([]);
   const [loadingLoaderVersions, setLoadingLoaderVersions] = useState(false);
+  const [loadingCompatibility, setLoadingCompatibility] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // 1. Initial Load: Fetch Minecraft Versions from official catalog
@@ -68,6 +70,9 @@ export const NewInstanceWizard: React.FC = () => {
     if (!minecraftVersion) return;
 
     let active = true;
+    setLoadingCompatibility(true);
+    setAvailableLoaders([]);
+    setCatalogError('');
     async function updateLoaders() {
       try {
         const res = await catalogApi.getCompatibleLoaders(minecraftVersion);
@@ -75,13 +80,12 @@ export const NewInstanceWizard: React.FC = () => {
         setAvailableLoaders(res.loaders || []);
 
         // If current loaderType is not supported, fallback to first supported or vanilla
-        const isCurrentSupported = res.loaders.some(l => l.loader === loaderType && l.supported);
-        if (!isCurrentSupported) {
-          const supported = res.loaders.find(l => l.supported);
-          setLoaderType(supported ? supported.loader : 'vanilla');
-        }
-      } catch (err) {
-        console.error('Failed to load compatible loaders', err);
+        setLoaderType(current => res.loaders.some(l => l.loader === current && l.available)
+          ? current : (res.loaders.find(l => l.loader !== 'vanilla' && l.available)?.loader || 'vanilla'));
+      } catch (err: any) {
+        if (active) setCatalogError(err.message || 'Impossible de vérifier la compatibilité des loaders.');
+      } finally {
+        if (active) setLoadingCompatibility(false);
       }
     }
 
@@ -94,14 +98,18 @@ export const NewInstanceWizard: React.FC = () => {
     if (!minecraftVersion || !loaderType) return;
 
     let active = true;
+    setLoadingLoaderVersions(true);
+    setLoaderVersions([]);
+    setLoaderVersion('');
     async function updateLoaderDetails() {
       try {
         // Fetch Java requirements
         const reqRes = await catalogApi.getRequirements(minecraftVersion, loaderType);
-        if (active && reqRes.requirement) {
-          setJavaVersion(reqRes.requirement.majorVersion);
-          if (reqRes.requirement.jvmArgs.length > 0) {
-            setJavaArgs(reqRes.requirement.jvmArgs.join(' '));
+        if (!active) return;
+        if (reqRes.requirements) {
+          setJavaVersion(reqRes.requirements.majorVersion);
+          if (reqRes.requirements.jvmArgs.length > 0) {
+            setJavaArgs(reqRes.requirements.jvmArgs.join(' '));
           }
         }
 
@@ -118,12 +126,12 @@ export const NewInstanceWizard: React.FC = () => {
         setLoaderVersions(lRes.versions || []);
 
         if (lRes.versions && lRes.versions.length > 0) {
-          setLoaderVersion(lRes.versions[0].version);
+          setLoaderVersion((lRes.versions.find(v => v.isRecommended) || lRes.versions[0]).version);
         } else {
           setLoaderVersion('');
         }
-      } catch (err) {
-        console.error('Failed to load loader versions', err);
+      } catch (err: any) {
+        if (active) setCatalogError(err.message || 'Impossible de charger les versions du loader.');
       } finally {
         if (active) setLoadingLoaderVersions(false);
       }
@@ -373,7 +381,7 @@ export const NewInstanceWizard: React.FC = () => {
                 { id: 'vanilla', label: 'Vanilla', desc: 'Sans loader' }
               ].map(loader => {
                 const compat = availableLoaders.find(l => l.loader === loader.id);
-                const isSupported = loader.id === 'vanilla' || (compat ? compat.supported : true);
+                const isSupported = !loadingCompatibility && Boolean(compat?.available);
                 const isSelected = loaderType === loader.id;
 
                 return (
@@ -401,13 +409,14 @@ export const NewInstanceWizard: React.FC = () => {
                     </div>
 
                     {!isSupported && (
-                      <span className="text-[9px] text-rose-500 font-medium mt-1">Non supporté pour {minecraftVersion}</span>
+                      <span className="text-[9px] text-rose-500 font-medium mt-1">{loadingCompatibility ? 'Vérification…' : compat?.error ? 'Catalogue indisponible' : `Non supporté pour ${minecraftVersion}`}</span>
                     )}
                   </button>
                 );
               })}
             </div>
 
+            {catalogError && <p role="alert" className="text-xs text-rose-500">{catalogError}</p>}
             {/* Loader Version Selector (if not vanilla) */}
             {loaderType !== 'vanilla' && (
               <div className="pt-2">
@@ -429,7 +438,7 @@ export const NewInstanceWizard: React.FC = () => {
                   >
                     {loaderVersions.map((lv, idx) => (
                       <option key={lv.version} value={lv.version}>
-                        {lv.version} {idx === 0 ? '(Dernière recommandée)' : ''}
+                        {lv.version} {lv.isRecommended ? '(Recommandée)' : ''}
                       </option>
                     ))}
                   </select>
@@ -460,6 +469,7 @@ export const NewInstanceWizard: React.FC = () => {
                     <option value={16}>Java 16 (1.17)</option>
                     <option value={17}>Java 17 (1.18 à 1.20.4)</option>
                     <option value={21}>Java 21 (1.20.5+ et NeoForge)</option>
+                    <option value={25}>Java 25 (26.1+)</option>
                   </select>
                 </div>
                 <p className="text-[10px] text-zinc-400 mt-1">Conforme aux spécifications officielles Mojang / Loader.</p>
@@ -504,7 +514,7 @@ export const NewInstanceWizard: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || loadingCatalog || loadingCompatibility || loadingLoaderVersions || !!catalogError || (loaderType !== 'vanilla' && !loaderVersion)}
               className="px-5 py-2 text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-lg shadow-xs transition flex items-center gap-2 disabled:opacity-60"
             >
               {submitting ? (

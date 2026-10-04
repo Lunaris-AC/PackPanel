@@ -1,13 +1,13 @@
 {
   "name": "@packpanel/launcher",
   "version": "2.0.0",
-  "description": "PackPanel desktop launcher application (Electron + React + TypeScript)",
+  "description": "PackPanel standalone Electron desktop launcher",
   "main": "dist/main/index.js",
   "scripts": {
     "build:main": "tsc -p tsconfig.main.json",
-    "build:renderer": "vite build",
-    "build": "npm run build:main",
-    "test": "echo \"Launcher tests passed\"",
+    "build:renderer": "node ../../scripts/copy-launcher-renderer.cjs",
+    "build": "npm run build:main && node ../../scripts/copy-launcher-renderer.cjs",
+    "test": "vitest run",
     "start": "electron dist/main/index.js"
   },
   "dependencies": {
@@ -16,8 +16,9 @@
     "@packpanel/templates": "^2.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.14.9",
-    "electron": "^31.3.0",
-    "typescript": "^5.6.2"
+    "@types/node": "^24.0.0",
+    "electron": "^44.5.1",
+    "typescript": "^5.6.2",
+    "vitest": "^5.0.3"
   }
 }

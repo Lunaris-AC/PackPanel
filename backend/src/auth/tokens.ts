@@ -34,6 +34,7 @@ export async function createSession(
 }
 
 export async function validateSession(sessionId: string, token: string): Promise<UserSession | null> {
+  if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(sessionId) || !/^[a-f0-9]{64}$/i.test(token)) return null;
   const tokenHash = hashToken(token);
 
   const res = await query(

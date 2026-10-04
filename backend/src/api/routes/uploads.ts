@@ -2,6 +2,8 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
+import { pipeline } from 'stream/promises';
 import { Server as TusServer } from '@tus/server';
 import { FileStore } from '@tus/file-store';
 import { query, withTransaction } from '../../db';
@@ -18,6 +20,8 @@ if (!fs.existsSync(tusUploadDir)) {
 
 export const tusServer = new TusServer({
   path: '/api/uploads/tus',
+  relativeLocation: true,
+  maxSize: 2 * 1024 * 1024 * 1024,
   datastore: new FileStore({ directory: tusUploadDir }),
   namingFunction: (req) => {
     return `tus_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -75,7 +79,7 @@ export const tusServer = new TusServer({
         );
       } else {
         const sanitized = assertSanitizedRelativePath(relativePathRaw);
-        const destFilePath = path.join(sessionStagingDir, sanitized);
+        const destFilePath = path.join(sessionStagingDir, randomUUID());
         const destDir = path.dirname(destFilePath);
         if (!fs.existsSync(destDir)) {
           fs.mkdirSync(destDir, { recursive: true, mode: 0o750 });
@@ -121,6 +125,35 @@ export const tusServer = new TusServer({
     return res;
   }
 });
+
+export async function authorizeTusRequest(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (req.user?.role !== 'admin' && req.user?.role !== 'operator') return reply.status(403).send({ error: 'Droits insuffisants' });
+  if (req.method === 'OPTIONS') return;
+  let metadata: Record<string, string | null> = {};
+  if (req.method === 'POST') {
+    for (const field of String(req.headers['upload-metadata'] || '').split(',')) {
+      const [name, value] = field.trim().split(' ');
+      if (name && value) metadata[name] = Buffer.from(value, 'base64').toString('utf8');
+    }
+  } else {
+    const uploadId = (req.params as Record<string, string>)['*'];
+    if (!uploadId || !/^[a-zA-Z0-9_-]+$/.test(uploadId)) return reply.status(400).send({ error: 'Identifiant upload invalide' });
+    try { metadata = (await tusServer.datastore.getUpload(uploadId)).metadata || {}; }
+    catch { return reply.status(404).send({ error: 'Upload introuvable' }); }
+  }
+  if (!metadata.sessionId || !metadata.endpointId) return reply.status(400).send({ error: 'Session et endpoint requis' });
+  const sessionRes = await query(`SELECT * FROM upload_sessions WHERE id::text = $1 AND endpoint_id::text = $2 AND expires_at > NOW()`, [metadata.sessionId, metadata.endpointId]);
+  const session = sessionRes.rows[0];
+  if (!session || !['open', 'uploading'].includes(session.status)) return reply.status(409).send({ error: 'Session fermée ou expirée' });
+  if (metadata.relativePath) {
+    try { assertSanitizedRelativePath(metadata.relativePath); }
+    catch { return reply.status(400).send({ error: 'Chemin invalide' }); }
+  }
+  if (req.user!.role !== 'admin') {
+    const permission = await query(`SELECT can_write FROM user_endpoint_permissions WHERE user_id = $1 AND endpoint_id = $2`, [req.user!.userId, session.endpoint_id]);
+    if (session.user_id !== req.user!.userId || !permission.rows[0]?.can_write) return reply.status(403).send({ error: 'Upload non autorisé pour cette session' });
+  }
+}
 
 export async function uploadRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticateRequest);
@@ -308,6 +341,9 @@ export async function uploadRoutes(fastify: FastifyInstance) {
           throw new Error('Identifiant de session manquant');
         }
         const activeSessionId: string = sessionId;
+        const checked = await query(`SELECT id, user_id FROM upload_sessions WHERE id::text = $1 AND endpoint_id::text = $2 AND status IN ('open', 'uploading') AND expires_at > NOW()`, [activeSessionId, endpointId]);
+        if (!checked.rows.length) return reply.status(409).send({ error: 'Session introuvable, fermée ou expirée' });
+        if (req.user!.role !== 'admin' && checked.rows[0].user_id !== req.user!.userId) return reply.status(403).send({ error: 'Session non autorisée' });
 
         const rawTarget: string = (relPath || fields.relativePath || part.filename || 'unnamed') as string;
         const effectiveRelPath = assertSanitizedRelativePath(rawTarget);
@@ -317,7 +353,7 @@ export async function uploadRoutes(fastify: FastifyInstance) {
           fs.mkdirSync(sessionStaging, { recursive: true, mode: 0o750 });
         }
 
-        const targetFilePath = path.join(sessionStaging, effectiveRelPath);
+        const targetFilePath = path.join(sessionStaging, randomUUID());
 
         const targetDir = path.dirname(targetFilePath);
         if (!fs.existsSync(targetDir)) {
@@ -325,11 +361,11 @@ export async function uploadRoutes(fastify: FastifyInstance) {
         }
 
         const writeStream = fs.createWriteStream(targetFilePath);
-        await new Promise<void>((resolve, reject) => {
-          part.file.pipe(writeStream);
-          writeStream.on('finish', resolve);
-          writeStream.on('error', reject);
-        });
+        await pipeline(part.file, writeStream);
+        if (part.file.truncated) {
+          fs.unlinkSync(targetFilePath);
+          return reply.status(413).send({ error: 'Fichier trop volumineux' });
+        }
 
         const stat = fs.statSync(targetFilePath);
 
@@ -400,11 +436,12 @@ export async function uploadRoutes(fastify: FastifyInstance) {
     const zipFilePath = path.join(sessionStaging, 'upload.zip');
     const writeStream = fs.createWriteStream(zipFilePath);
 
-    await new Promise<void>((resolve, reject) => {
-      data.file.pipe(writeStream);
-      writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
-    });
+    await pipeline(data.file, writeStream);
+    if (data.file.truncated) {
+      fs.unlinkSync(zipFilePath);
+      await query(`UPDATE upload_sessions SET status = 'failed', error_message = 'Archive trop volumineuse' WHERE id = $1`, [sessionId]);
+      return reply.status(413).send({ error: 'Archive trop volumineuse' });
+    }
 
     const job = await enqueueJob('extract_zip_import', {
       sessionId,

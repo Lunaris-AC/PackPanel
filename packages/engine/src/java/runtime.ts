@@ -1,16 +1,18 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import AdmZip from 'adm-zip';
-import { downloadFile } from '../utils/http.js';
+import { downloadFile, fetchJson } from '../utils/http.js';
 
 export function getRecommendedJavaVersion(minecraftVersion: string): number {
+  if (/^\d{2}\./.test(minecraftVersion)) return 25;
   const parts = minecraftVersion.split('.').map(Number);
   const minor = parts[1] || 0;
   const patch = parts[2] || 0;
 
   if (minor <= 16) return 8;
+  if (minor === 17) return 16;
   if (minor < 20 || (minor === 20 && patch <= 4)) return 17;
   return 21;
 }
@@ -19,10 +21,12 @@ export function getSystemJavaInfo(customJavaPath?: string): { valid: boolean; ma
   const javaExec = customJavaPath || (process.platform === 'win32' ? 'java.exe' : 'java');
 
   try {
-    const output = execSync(`"${javaExec}" -version 2>&1`, { encoding: 'utf8', timeout: 5000 });
+    const result = spawnSync(javaExec, ['-version'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
+    if (result.error || result.status !== 0) return { valid: false };
+    const output = result.stdout + result.stderr;
     // Match strings like:
     // openjdk version "17.0.10" or java version "1.8.0_351" or "21.0.2"
-    const match = output.match(/version "(?:1\.)?(\d+)/i);
+    const match = output.match(/(?:version|openjdk) "?(?:1\.)?(\d+)/i);
     if (match && match[1]) {
       return {
         valid: true,
@@ -96,16 +100,19 @@ export class JavaRuntimeManager {
     const archiveExt = process.platform === 'win32' ? 'zip' : 'tar.gz';
     const archivePath = path.join(this.baseDir, 'runtimes', `temurin-${requiredMajorVersion}.${archiveExt}`);
 
-    const adoptiumApiUrl = `https://api.adoptium.net/v3/binary/latest/${requiredMajorVersion}/ga/${osName}/${archName}/jre/hotspot/normal/eclipse`;
-
-    await downloadFile(adoptiumApiUrl, archivePath, { onProgress });
+    const releases = await fetchJson<Array<{ binary: { package: { link: string; checksum: string; size: number } } }>>(
+      `https://api.adoptium.net/v3/assets/latest/${requiredMajorVersion}/hotspot?architecture=${archName}&image_type=jre&os=${osName}&vendor=eclipse`
+    );
+    const archive = releases[0]?.binary.package;
+    if (!archive || !/^[a-f0-9]{64}$/i.test(archive.checksum)) throw new Error(`Runtime Java ${requiredMajorVersion} indisponible.`);
+    await downloadFile(archive.link, archivePath, { expectedSha256: archive.checksum, expectedSize: archive.size, onProgress });
 
     if (archiveExt === 'zip') {
       const zip = new AdmZip(archivePath);
       zip.extractAllTo(runtimeDir, true);
     } else {
       // Tar.gz extraction on Unix
-      execSync(`tar -xzf "${archivePath}" -C "${runtimeDir}"`);
+      execFileSync('tar', ['-xzf', archivePath, '-C', runtimeDir]);
     }
 
     if (fs.existsSync(archivePath)) {
@@ -115,7 +122,7 @@ export class JavaRuntimeManager {
     // Find the installed binary
     const subdirs = fs.readdirSync(runtimeDir, { withFileTypes: true }).filter(d => d.isDirectory());
     for (const d of subdirs) {
-      const cand = path.join(runtimeDir, d.name, 'bin', binaryName);
+      const cand = path.join(runtimeDir, d.name, binSubdir, binaryName);
       if (fs.existsSync(cand)) {
         if (process.platform !== 'win32') {
           fs.chmodSync(cand, 0o755);

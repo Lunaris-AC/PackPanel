@@ -56,7 +56,7 @@ export async function catalogRoutes(fastify: FastifyInstance) {
 
     try {
       const loaders = await getAvailableLoadersForMinecraft(minecraftVersion);
-      return reply.send({ loaders });
+      return reply.send({ mcVersion: minecraftVersion, loaders });
     } catch (err: any) {
       return reply.status(502).send({
         error: 'Erreur lors de la résolution des loaders: ' + (err.message || '')
@@ -70,13 +70,13 @@ export async function catalogRoutes(fastify: FastifyInstance) {
     const loader = q.loader as LoaderType;
     const minecraftVersion = q.minecraftVersion || q.mcVersion;
 
-    if (!loader || !minecraftVersion) {
+    if (!['vanilla', 'fabric', 'quilt', 'neoforge', 'forge'].includes(loader) || !minecraftVersion) {
       return reply.status(400).send({ error: 'Les paramètres loader et minecraftVersion sont requis' });
     }
 
     try {
       const versions = await getLoaderVersions(loader, minecraftVersion);
-      return reply.send({ versions });
+      return reply.send({ loader, mcVersion: minecraftVersion, versions });
     } catch (err: any) {
       return reply.status(502).send({
         error: 'Erreur lors de la résolution des versions du loader: ' + (err.message || '')

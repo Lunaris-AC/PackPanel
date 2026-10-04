@@ -5,6 +5,9 @@ import crypto from 'crypto';
 import { validateCombination, resolveJavaRequirement } from '../src/catalog';
 import { buildLauncherArtifact } from '../src/build/launcher-builder';
 import * as db from '../src/db';
+vi.mock('../src/build/desktop-package', () => ({
+  appendDesktopRuntime: async (archive: any) => archive.append('runtime fixture', { name: 'windows/electron.exe' })
+}));
 
 describe('Instance-Centric Architecture & Catalog Tests', () => {
   it('validates NeoForge 1.21.1 with Java 21 requirement', async () => {

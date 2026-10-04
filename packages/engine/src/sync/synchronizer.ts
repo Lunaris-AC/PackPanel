@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { InstanceManifestV2, InstanceFileEntryV2 } from '@packpanel/protocol';
+import { InstanceManifestV2, InstanceFileEntryV2, InstanceManifestV2Schema } from '@packpanel/protocol';
+import { resolveSafePath } from '../utils/platform.js';
 import { fetchJson, downloadFile } from '../utils/http.js';
 import { computeFileHashes } from '../utils/hasher.js';
 
@@ -23,7 +24,7 @@ export class InstanceSynchronizer {
 
     // If it's already a V2 manifest
     if (rawData && rawData.formatVersion === 2) {
-      return rawData as InstanceManifestV2;
+      return InstanceManifestV2Schema.parse(rawData);
     }
 
     // If it's a MineLaunched manifest (JSON array)
@@ -75,20 +76,24 @@ export class InstanceSynchronizer {
       fs.mkdirSync(this.instanceDir, { recursive: true });
     }
 
-    const protectedPaths = manifest.protectedPaths || [
+    const protectedPaths = [
       'saves/',
       'screenshots/',
       'options.txt',
       'optionsof.txt',
       'usercache.json',
-      'servers.dat'
+      'servers.dat',
+      ...(manifest.protectedPaths || []),
+      ...manifest.files.filter(f => f.policy === 'protected' || f.policy === 'user_managed').map(f => f.path)
     ];
+    for (const file of manifest.files) resolveSafePath(this.instanceDir, file.path);
+    for (const rule of manifest.cleanupRules || []) resolveSafePath(this.instanceDir, rule);
 
     const isProtected = (relPath: string): boolean => {
       const normalized = relPath.replace(/\\+/g, '/').toLowerCase();
       for (const prot of protectedPaths) {
         const normProt = prot.replace(/\\+/g, '/').toLowerCase();
-        if (normProt.endsWith('/') && normalized.startsWith(normProt)) {
+        if (normProt.endsWith('/') && (normalized.startsWith(normProt) || normalized === normProt.slice(0, -1))) {
           return true;
         }
         if (normalized === normProt) {
@@ -110,13 +115,14 @@ export class InstanceSynchronizer {
         continue; // Never overwrite player-protected files
       }
 
-      const localPath = path.join(this.instanceDir, normalizedPath);
+      const localPath = resolveSafePath(this.instanceDir, normalizedPath);
+      if ((file.policy === 'optional' || file.policy === 'default_off') && !fs.existsSync(localPath)) continue;
       if (!fs.existsSync(localPath)) {
         filesToDownload.push(file);
       } else {
         try {
           const hashes = await computeFileHashes(localPath);
-          if (hashes.sha1 !== file.sha1.toLowerCase()) {
+          if (hashes.sha1 !== file.sha1.toLowerCase() || (file.sha256 && hashes.sha256 !== file.sha256.toLowerCase())) {
             filesToDownload.push(file);
           }
         } catch (e) {
@@ -135,7 +141,7 @@ export class InstanceSynchronizer {
         const item = queue.shift();
         if (!item) break;
 
-        const destPath = path.join(this.instanceDir, item.path);
+        const destPath = resolveSafePath(this.instanceDir, item.path);
         await downloadFile(item.url, destPath, {
           expectedSha1: item.sha1,
           expectedSha256: item.sha256,
@@ -153,7 +159,8 @@ export class InstanceSynchronizer {
 
     // 3. Cleanup useless files according to cleanupRules
     for (const rule of manifest.cleanupRules || []) {
-      const ruleDir = path.join(this.instanceDir, rule);
+      if (isProtected(rule)) continue;
+      const ruleDir = resolveSafePath(this.instanceDir, rule);
       if (fs.existsSync(ruleDir) && fs.statSync(ruleDir).isDirectory()) {
         this.cleanDirectory(ruleDir, rule, validManifestPaths, isProtected);
       }
@@ -175,6 +182,7 @@ export class InstanceSynchronizer {
       if (isProtected(relPath)) {
         continue;
       }
+      resolveSafePath(this.instanceDir, relPath);
 
       if (entry.isDirectory()) {
         this.cleanDirectory(fullPath, prefix, validPaths, isProtected);

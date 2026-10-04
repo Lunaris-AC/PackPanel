@@ -42,7 +42,7 @@ export async function jobRoutes(fastify: FastifyInstance) {
 
   // Cancel a pending job
   fastify.post('/jobs/:id/cancel', {
-    preHandler: [requireRole(['admin', 'operator'])]
+    preHandler: [requireRole(['admin'])]
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const res = await query(

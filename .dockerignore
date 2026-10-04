@@ -9,3 +9,8 @@ frontend/dist
 backend/node_modules
 backend/dist
 *.log
+**/node_modules
+**/dist
+*.tar.gz
+tests
+docs

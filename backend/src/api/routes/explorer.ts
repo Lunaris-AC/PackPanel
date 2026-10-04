@@ -3,7 +3,7 @@ import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, requireRole, recordAuditLog } from '../../auth/middleware';
+import { authenticateRequest, requireRole, requireEndpointPermission, recordAuditLog } from '../../auth/middleware';
 import { config, STAGING_DIR } from '../../config';
 import { getCasObjectPath, storeBufferInCas, linkObjectToRelease } from '../../storage/cas';
 import { hashBuffer } from '../../storage/hasher';
@@ -38,7 +38,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     if (releaseId) {
       const relRes = await query(
-        'SELECT * FROM releases WHERE endpoint_id = $1 AND (id = $2 OR release_id = $2)',
+        'SELECT * FROM releases WHERE endpoint_id = $1 AND (id::text = $2 OR release_id = $2)',
         [endpointId, releaseId]
       );
       if (relRes.rows.length > 0) {
@@ -169,7 +169,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     let targetRelId: string | null = null;
     if (releaseId) {
-      const relRes = await query('SELECT id FROM releases WHERE endpoint_id = $1 AND (id = $2 OR release_id = $2)', [endpointId, releaseId]);
+      const relRes = await query('SELECT id FROM releases WHERE endpoint_id = $1 AND (id::text = $2 OR release_id = $2)', [endpointId, releaseId]);
       if (relRes.rows.length > 0) targetRelId = relRes.rows[0].id;
     } else {
       const relRes = await query('SELECT id FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1', [endpointId]);
@@ -250,7 +250,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
   // Save/Edit a text file and auto-publish or stage as draft
   fastify.post('/endpoints/:id/explorer/save-file', {
-    preHandler: [requireRole(['admin', 'operator'])]
+    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_write')]
   }, async (req, reply) => {
     const { id: endpointId } = req.params as { id: string };
     const schema = z.object({
@@ -265,6 +265,10 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     }
 
     const { path: rawPath, content, commitNow } = parsed.data;
+    if (commitNow) {
+      await requireEndpointPermission('can_publish')(req, reply);
+      if (reply.sent) return;
+    }
     let sanitizedPath: string;
     try {
       sanitizedPath = assertSanitizedRelativePath(rawPath);
@@ -300,7 +304,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     const sessRes = await query(
       `INSERT INTO upload_sessions (endpoint_id, user_id, mode, source_type, status, total_files, processed_files, failed_files)
-       VALUES ($1, $2, 'add_replace', 'manual', 'completed', 1, 1, 0)
+       VALUES ($1, $2, 'add_replace', 'manual', 'uploading', 1, 1, 0)
        RETURNING id`,
       [endpointId, req.user!.userId]
     );
@@ -319,7 +323,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     );
 
     if (commitNow) {
-      await handleSealAndBuildRelease({ sessionId });
+      await handleSealAndBuildRelease({ sessionId, immediatePublish: true });
       
       // Record history entry
       const action = existingFile ? 'edit' : 'create';
@@ -364,7 +368,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
   // Batch Upload from Drag & Drop or File Selector
   fastify.post('/endpoints/:id/explorer/upload-batch', {
-    preHandler: [requireRole(['admin', 'operator'])]
+    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')]
   }, async (req, reply) => {
     const { id: endpointId } = req.params as { id: string };
     const schema = z.object({
@@ -483,7 +487,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
   // Delete file or directory from active release
   fastify.post('/endpoints/:id/explorer/delete', {
-    preHandler: [requireRole(['admin', 'operator'])]
+    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')]
   }, async (req, reply) => {
     const { id: endpointId } = req.params as { id: string };
     const schema = z.object({
@@ -597,7 +601,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
   // Undo a specific file change
   fastify.post('/endpoints/:id/explorer/undo/:historyId', {
-    preHandler: [requireRole(['admin', 'operator'])]
+    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')]
   }, async (req, reply) => {
     const { id: endpointId, historyId } = req.params as { id: string; historyId: string };
 

@@ -55,8 +55,8 @@ export function isAllowedOrigin(originHeader?: string): boolean {
     return (
       host === 'localhost' ||
       host === '127.0.0.1' ||
-      host === config.ADMIN_FQDN.toLowerCase() ||
-      host === config.FILES_FQDN.toLowerCase() ||
+      host === config.ADMIN_FQDN.toLowerCase().split(':')[0] ||
+      host === config.FILES_FQDN.toLowerCase().split(':')[0] ||
       /^192\.168\.\d+\.\d+$/.test(host) ||
       /^10\.\d+\.\d+\.\d+$/.test(host) ||
       /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/.test(host)
@@ -74,7 +74,11 @@ export async function enforceOriginCheck(req: FastifyRequest, reply: FastifyRepl
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return;
   }
-  const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : undefined);
+  let origin = req.headers.origin;
+  if (!origin && req.headers.referer) {
+    try { origin = new URL(req.headers.referer).origin; }
+    catch { return reply.status(403).send({ error: 'Origine invalide' }); }
+  }
   if (origin && !isAllowedOrigin(origin)) {
     return reply.status(403).send({ error: 'Origine interdite (protection CSRF)' });
   }
@@ -114,6 +118,18 @@ export function requireEndpointPermission(permission: 'can_write' | 'can_publish
     if (res.rows.length === 0 || !res.rows[0][permission]) {
       return reply.status(403).send({ error: `Droits insuffisants (${permission}) sur cet endpoint` });
     }
+  };
+}
+
+export function requireInstancePermission(permission: 'can_write' | 'can_publish') {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    if (req.user?.role === 'admin') return;
+    const id = (req.params as { id?: string })?.id;
+    if (!id) return;
+    const instance = await query('SELECT endpoint_id FROM instances WHERE id::text = $1 OR slug = $1', [id]);
+    if (!instance.rows.length) return reply.status(404).send({ error: 'Instance introuvable' });
+    const rights = await query('SELECT can_write, can_publish FROM user_endpoint_permissions WHERE user_id = $1 AND endpoint_id = $2', [req.user?.userId, instance.rows[0].endpoint_id]);
+    if (!rights.rows[0]?.[permission]) return reply.status(403).send({ error: 'Droits insuffisants sur cette instance' });
   };
 }
 

@@ -3,6 +3,7 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 import { downloadFile } from '../utils/http.js';
 import { MojangVersionJson, MojangLibrary } from '../mojang/version.js';
+import { mergeLoaderLibraries, runInstallerProcessors } from './installer.js';
 
 export const FORGE_MAVEN_URL = 'https://maven.minecraftforge.net/net/minecraftforge/forge';
 
@@ -37,7 +38,8 @@ export class ForgeLoaderResolver {
   async mergeForgeVersion(
     vanillaVersionData: MojangVersionJson,
     gameVersion: string,
-    forgeVersion: string
+    forgeVersion: string,
+    javaPath?: string
   ): Promise<MojangVersionJson> {
     const installerFileName = `forge-${gameVersion}-${forgeVersion}-installer.jar`;
     const installerUrl = `${FORGE_MAVEN_URL}/${gameVersion}-${forgeVersion}/${installerFileName}`;
@@ -53,35 +55,21 @@ export class ForgeLoaderResolver {
     }
 
     const zip = new AdmZip(installerPath);
+    const installProfile = JSON.parse(zip.getEntry('install_profile.json')?.getData().toString('utf8') || '{}');
     const versionJsonEntry = zip.getEntry('version.json');
-    if (!versionJsonEntry) {
+    if (!versionJsonEntry && !installProfile.versionInfo) {
       throw new Error(`Le fichier version.json est absent de l'installeur Forge : ${installerFileName}`);
     }
 
-    const forgeVersionJson = JSON.parse(versionJsonEntry.getData().toString('utf8')) as MojangVersionJson;
-
-    // Merge libraries: Forge libraries first, then vanilla libraries
-    const mergedLibs: MojangLibrary[] = [
-      ...forgeVersionJson.libraries,
-      ...vanillaVersionData.libraries
-    ];
-
-    // Deduplicate libraries by name
-    const seenNames = new Set<string>();
-    const deduplicatedLibs: MojangLibrary[] = [];
-    for (const lib of mergedLibs) {
-      const baseName = lib.name.split(':').slice(0, 2).join(':');
-      if (!seenNames.has(baseName)) {
-        seenNames.add(baseName);
-        deduplicatedLibs.push(lib);
-      }
-    }
+    const forgeVersionJson = versionJsonEntry ? JSON.parse(versionJsonEntry.getData().toString('utf8')) as MojangVersionJson : installProfile.versionInfo as MojangVersionJson;
+    if (javaPath) await runInstallerProcessors(this.baseDir, installerPath, vanillaVersionData, javaPath);
 
     return {
       ...vanillaVersionData,
       id: forgeVersionJson.id || `forge-${gameVersion}-${forgeVersion}`,
       mainClass: forgeVersionJson.mainClass,
-      libraries: deduplicatedLibs,
+      libraries: mergeLoaderLibraries(forgeVersionJson.libraries, vanillaVersionData.libraries),
+      minecraftArguments: forgeVersionJson.minecraftArguments || vanillaVersionData.minecraftArguments,
       arguments: {
         jvm: [
           ...(vanillaVersionData.arguments?.jvm || []),

@@ -48,7 +48,7 @@ export class JobQueue {
       return null;
     }
 
-    return res.rows[0] as JobRecord;
+    return { ...res.rows[0], type: res.rows[0].job_type } as JobRecord;
   }
 
   /**
@@ -81,10 +81,10 @@ export class JobQueue {
    * Marks a job as failed, or re-queues it if attempts < max_attempts.
    */
   static async fail(jobId: string, errorMessage: string): Promise<void> {
-    const res = await query('SELECT attempts, max_attempts FROM jobs WHERE id = $1', [jobId]);
+    const res = await query('SELECT attempts, max_attempts, job_type, payload FROM jobs WHERE id = $1', [jobId]);
     if (res.rows.length === 0) return;
 
-    const { attempts, max_attempts } = res.rows[0];
+    const { attempts, max_attempts, job_type, payload } = res.rows[0];
 
     if (attempts < max_attempts) {
       // Re-queue for retry with backoff
@@ -106,6 +106,12 @@ export class JobQueue {
          WHERE id = $1`,
         [jobId, errorMessage]
       );
+      if (job_type === 'process_upload_file' && payload?.uploadFileId) {
+        await query(`UPDATE upload_files SET status = 'failed', error_message = $2 WHERE id = $1 AND status <> 'verified' AND staging_path = $3`, [payload.uploadFileId, errorMessage, payload.tempFilePath || payload.stagingPath]);
+        await query(`UPDATE upload_sessions SET failed_files = (SELECT COUNT(*) FROM upload_files WHERE session_id = $1 AND status = 'failed'), updated_at = NOW() WHERE id = $1`, [payload.sessionId]);
+      } else if (payload?.sessionId && ['extract_zip_import', 'seal_and_build_release'].includes(job_type)) {
+        await query(`UPDATE upload_sessions SET status = 'failed', error_message = $2, updated_at = NOW() WHERE id = $1`, [payload.sessionId, errorMessage]);
+      }
     }
   }
 }

@@ -2,7 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { query } from '../db';
-import { config, DATA_DIR } from '../config';
+import { config, DATA_DIR, getFilesBaseUrl } from '../config';
+import { appendDesktopRuntime } from './desktop-package';
 
 function createZipArchive(options: any) {
   const archiverModule = require('archiver');
@@ -24,6 +25,7 @@ export interface BuildLauncherOptions {
   launcherProjectId: string;
   targetOs: 'windows' | 'linux' | 'macos' | 'all';
   userId?: string;
+  instanceId?: string;
 }
 
 export async function buildLauncherArtifact(options: BuildLauncherOptions): Promise<{
@@ -77,10 +79,11 @@ export async function buildLauncherArtifact(options: BuildLauncherOptions): Prom
        FROM launcher_project_instances lpi
        JOIN instances i ON i.id = lpi.instance_id
        LEFT JOIN endpoints e ON e.id = i.endpoint_id
-       WHERE lpi.launcher_project_id = $1
+       WHERE lpi.launcher_project_id = $1 AND ($2::uuid IS NULL OR i.id = $2)
        ORDER BY lpi.sort_order ASC`,
-      [launcherProjectId]
+      [launcherProjectId, options.instanceId || null]
     );
+    if (instRes.rows.length === 0) throw new Error('Associez au moins une instance au launcher avant de le générer.');
 
     const launcherConfig = {
       formatVersion: 2,
@@ -105,13 +108,13 @@ export async function buildLauncherArtifact(options: BuildLauncherOptions): Prom
         id: inst.id,
         slug: inst.slug,
         name: inst.name,
-        manifestUrl: `https://${config.FILES_FQDN}/${inst.endpoint_slug || inst.slug}/packpanel.json`,
+        manifestUrl: `${getFilesBaseUrl()}/${inst.endpoint_slug || inst.slug}/packpanel.json`,
         isDefault: inst.is_default,
         iconUrl: inst.icon_url || undefined
       }))
     };
 
-    const artifactFilename = `launcher-${proj.slug}-${targetOs}-v${version}.zip`;
+    const artifactFilename = `launcher-${proj.slug}-${targetOs}-v${version}-${buildId}.zip`;
     const artifactPath = path.join(BUILDS_DIR, artifactFilename);
 
     // Create zip archive
@@ -120,6 +123,7 @@ export async function buildLauncherArtifact(options: BuildLauncherOptions): Prom
       const archive = createZipArchive({ zlib: { level: 9 } });
 
       output.on('close', resolve);
+      output.on('error', reject);
       archive.on('error', reject);
 
       archive.pipe(output);
@@ -133,52 +137,23 @@ Version: ${version}
 Plateforme cible: ${targetOs}
 Généré le: ${new Date().toISOString()}
 
-Ce package autonome contient la configuration et le moteur PackPanel V2.
+Ce package contient Electron, le programme du launcher et le moteur PackPanel.
+Architecture : x64. Aucune installation de Node.js n'est nécessaire.
 Instances incluses :
 ${instRes.rows.map(i => `- ${i.name} (Minecraft ${i.minecraft_version} - ${i.loader_type})`).join('\n')}
 
 Lancement :
-- Windows : Exécutez run-launcher.bat
-- Linux / macOS : ./run-launcher.sh
+- Windows : Ouvrez windows/run-launcher.bat
+- Linux : Exécutez linux/run-launcher.sh (session graphique requise)
+- macOS : Ouvrez macos/Electron.app
 `;
       archive.append(readme, { name: 'README.txt' });
 
-      // 3. Execution scripts
-      const batScript = `@echo off
-title ${proj.title}
-echo Lancement du launcher ${proj.title}...
-node -v >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo [ERREUR] Node.js ou Electron requis pour executer le launcher autonome.
-    pause
-    exit /b 1
-)
-npx electron .
-`;
-      archive.append(batScript, { name: 'run-launcher.bat' });
-
-      const shScript = `#!/usr/bin/env bash
-set -e
-echo "Lancement du launcher ${proj.title}..."
-if ! command -v node &> /dev/null; then
-    echo "[ERREUR] Node.js ou Electron requis."
-    exit 1
-fi
-npx electron .
-`;
-      archive.append(shScript, { name: 'run-launcher.sh', mode: 0o755 });
-
-      // 4. Package.json descriptor for standalone execution
-      const pkgJson = {
-        name: proj.slug,
-        version: version,
-        main: "index.js",
-        description: proj.title,
-        dependencies: {}
-      };
-      archive.append(JSON.stringify(pkgJson, null, 2), { name: 'package.json' });
-
-      archive.finalize();
+      const targets = targetOs === 'all' ? ['windows', 'linux', 'macos'] as const : [targetOs];
+      (async () => {
+        for (const target of targets) await appendDesktopRuntime(archive, target, launcherConfig);
+        await archive.finalize();
+      })().catch(error => { archive.abort(); output.destroy(); reject(error); });
     });
 
     // 5. Compute SHA256 and size

@@ -147,6 +147,11 @@ export class MojangVersionResolver {
       if (lib.downloads?.artifact) {
         const artifact = lib.downloads.artifact;
         const targetPath = path.join(librariesDir, artifact.path);
+        if (!artifact.url) {
+          if (!fs.existsSync(targetPath)) throw new Error(`Bibliothèque générée absente: ${lib.name}`);
+          classpath.push(targetPath);
+          continue;
+        }
         await downloadFile(artifact.url, targetPath, {
           expectedSha1: artifact.sha1,
           expectedSize: artifact.size
@@ -159,11 +164,7 @@ export class MojangVersionResolver {
         if (!fs.existsSync(targetPath)) {
           const repoUrl = (lib.url || 'https://libraries.minecraft.net/').replace(/\/+$/, '');
           const downloadUrl = `${repoUrl}/${relPath}`;
-          try {
-            await downloadFile(downloadUrl, targetPath);
-          } catch (e) {
-            // Ignore optional or non-standard maven downloads
-          }
+          await downloadFile(downloadUrl, targetPath);
         }
         if (fs.existsSync(targetPath)) {
           classpath.push(targetPath);
@@ -238,26 +239,24 @@ export class MojangVersionResolver {
     const indexContent = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
     const objects = Object.values(indexContent.objects || {}) as Array<{ hash: string; size: number }>;
 
+    const uniqueObjects = [...new Map(objects.map(object => [object.hash, object])).values()];
+    let next = 0;
     let count = 0;
-    for (const obj of objects) {
-      count++;
-      if (onProgress && count % 50 === 0) onProgress(count, objects.length);
-
-      const prefix = obj.hash.substring(0, 2);
-      const targetDir = path.join(objectsDir, prefix);
-      const targetPath = path.join(targetDir, obj.hash);
-
-      if (fs.existsSync(targetPath)) {
-        continue; // Already downloaded
+    await Promise.all(Array.from({ length: Math.min(12, uniqueObjects.length) }, async () => {
+      while (next < uniqueObjects.length) {
+        const obj = uniqueObjects[next++];
+        if (!/^[a-f0-9]{40}$/.test(obj.hash)) throw new Error('Identifiant de ressource Minecraft invalide.');
+        const prefix = obj.hash.substring(0, 2);
+        const targetPath = path.join(objectsDir, prefix, obj.hash);
+        await downloadFile(`${MOJANG_ASSET_BASE_URL}/${prefix}/${obj.hash}`, targetPath, {
+          expectedSha1: obj.hash,
+          expectedSize: obj.size
+        });
+        count++;
+        if (count % 25 === 0) onProgress?.(count, uniqueObjects.length);
       }
+    }));
 
-      const assetUrl = `${MOJANG_ASSET_BASE_URL}/${prefix}/${obj.hash}`;
-      await downloadFile(assetUrl, targetPath, {
-        expectedSha1: obj.hash,
-        expectedSize: obj.size
-      });
-    }
-
-    if (onProgress) onProgress(objects.length, objects.length);
+    if (onProgress) onProgress(uniqueObjects.length, uniqueObjects.length);
   }
 }

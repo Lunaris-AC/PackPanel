@@ -15,6 +15,7 @@ export interface LoaderCompatibilitySummary {
   loader: LoaderType;
   displayName: string;
   available: boolean;
+  error?: string;
   supportState: SupportState;
   recommendedVersion?: string;
   latestVersion?: string;

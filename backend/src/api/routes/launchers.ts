@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query, withTransaction } from '../../db';
 import { authenticateRequest, requireRole, recordAuditLog } from '../../auth/middleware';
-import { config } from '../../config';
+import { config, getFilesBaseUrl } from '../../config';
 
 const LauncherCreateSchema = z.object({
   name: z.string().min(1).max(128),
@@ -13,7 +13,7 @@ const LauncherCreateSchema = z.object({
   backgroundUrl: z.string().url().optional(),
   logoUrl: z.string().url().optional(),
   iconUrl: z.string().url().optional(),
-  authMicrosoft: z.boolean().default(true),
+  authMicrosoft: z.boolean().default(false),
   authOffline: z.boolean().default(true),
   discordUrl: z.string().url().optional(),
   websiteUrl: z.string().url().optional(),
@@ -71,7 +71,7 @@ export async function launcherRoutes(fastify: FastifyInstance) {
       launcher,
       instances: instancesRes.rows.map(inst => ({
         ...inst,
-        manifest_url: inst.endpoint_slug ? `https://${config.FILES_FQDN}/${inst.endpoint_slug}/packpanel.json` : null
+        manifest_url: inst.endpoint_slug ? `${getFilesBaseUrl()}/${inst.endpoint_slug}/packpanel.json` : null
       })),
       builds: buildsRes.rows
     });
@@ -267,7 +267,7 @@ export async function launcherRoutes(fastify: FastifyInstance) {
         id: inst.id,
         slug: inst.slug,
         name: inst.name,
-        manifestUrl: `https://${config.FILES_FQDN}/${inst.endpoint_slug || inst.slug}/packpanel.json`,
+        manifestUrl: `${getFilesBaseUrl()}/${inst.endpoint_slug || inst.slug}/packpanel.json`,
         isDefault: inst.is_default,
         iconUrl: inst.icon_url || undefined
       }))

@@ -217,7 +217,8 @@ export interface MinecraftVersionSummary {
 
 export interface LoaderCompatibilitySummary {
   loader: LoaderType;
-  supported: boolean;
+  available: boolean;
+  error?: string;
   recommendedVersion?: string;
   latestVersion?: string;
 }
@@ -225,6 +226,7 @@ export interface LoaderCompatibilitySummary {
 export interface LoaderVersionEntry {
   version: string;
   stable: boolean;
+  isRecommended?: boolean;
 }
 
 export interface JavaRequirement {

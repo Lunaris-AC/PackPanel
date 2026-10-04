@@ -31,12 +31,11 @@ export async function fetchForgePromos(): Promise<Record<string, string>> {
 }
 
 export async function isForgeAvailableForMinecraft(mcVersion: string): Promise<boolean> {
-  const promos = await fetchForgePromos();
-  return Boolean(promos[`${mcVersion}-latest`] || promos[`${mcVersion}-recommended`]);
+  return (await fetchForgeLoaderVersions(mcVersion)).length > 0;
 }
 
 export async function fetchForgeLoaderVersions(mcVersion: string): Promise<LoaderVersionEntry[]> {
-  const promos = await fetchForgePromos();
+  const promos = await fetchForgePromos().catch(() => ({} as Record<string, string>));
   const recommended = promos[`${mcVersion}-recommended`];
   const latest = promos[`${mcVersion}-latest`];
 
@@ -53,7 +52,7 @@ export async function fetchForgeLoaderVersions(mcVersion: string): Promise<Loade
         const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
         try {
           const res = await fetch(FORGE_MAVEN_META_URL, { signal: controller.signal });
-          if (!res.ok) return [];
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const xml = await res.text();
           const list: string[] = [];
           const regex = /<version>([^<]+)<\/version>/g;
@@ -78,6 +77,7 @@ export async function fetchForgeLoaderVersions(mcVersion: string): Promise<Loade
     }
   } catch (e) {
     // If maven metadata fails, promos is our authoritative fallback
+    if (versionsSet.size === 0) throw e;
   }
 
   const list = Array.from(versionsSet);

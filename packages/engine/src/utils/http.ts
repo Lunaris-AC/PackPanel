@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { Readable, Transform } from 'stream';
+import { pipeline } from 'stream/promises';
 import { computeFileHashes } from './hasher.js';
 
 export interface DownloadOptions {
@@ -24,7 +26,7 @@ export async function downloadFile(
       let matches = true;
       if (expectedSha1 && hashes.sha1 !== expectedSha1.toLowerCase()) matches = false;
       if (expectedSha256 && hashes.sha256 !== expectedSha256.toLowerCase()) matches = false;
-      if (expectedSize && hashes.size !== expectedSize) matches = false;
+      if (expectedSize !== undefined && hashes.size !== expectedSize) matches = false;
 
       if (matches) {
         if (onProgress && expectedSize) onProgress(expectedSize, expectedSize);
@@ -49,6 +51,7 @@ export async function downloadFile(
 
     try {
       const response = await fetch(url, {
+        signal: AbortSignal.timeout(120000),
         headers: {
           'User-Agent': 'PackPanel-Launcher-Engine/2.0'
         }
@@ -61,30 +64,17 @@ export async function downloadFile(
       const totalBytes = Number(response.headers.get('content-length') || expectedSize || 0);
       let transferred = 0;
 
-      const fileStream = fs.createWriteStream(tempPath);
-
       if (!response.body) {
         throw new Error(`Corps de réponse vide pour ${url}`);
       }
 
-      // @ts-ignore - Node 18+ Web Streams to Node stream
-      const reader = response.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          fileStream.write(Buffer.from(value));
-          transferred += value.length;
-          if (onProgress) {
-            onProgress(transferred, totalBytes);
-          }
-        }
-      }
-
-      await new Promise<void>((resolve, reject) => {
-        fileStream.end(() => resolve());
-        fileStream.on('error', reject);
-      });
+      const counter = new Transform({ transform(chunk, _encoding, callback) {
+        transferred += chunk.length;
+        onProgress?.(transferred, totalBytes);
+        callback(null, chunk);
+      }});
+      await pipeline(Readable.fromWeb(response.body as any), counter, fs.createWriteStream(tempPath));
+      if (expectedSize !== undefined && transferred !== expectedSize) throw new Error(`Taille invalide pour ${url}: ${transferred} au lieu de ${expectedSize}`);
 
       // Verify hashes if specified
       if (expectedSha1 || expectedSha256) {
@@ -98,9 +88,6 @@ export async function downloadFile(
       }
 
       // Atomic rename
-      if (fs.existsSync(destPath)) {
-        fs.unlinkSync(destPath);
-      }
       fs.renameSync(tempPath, destPath);
       return;
     } catch (err: any) {
@@ -119,6 +106,7 @@ export async function downloadFile(
 
 export async function fetchJson<T = any>(url: string): Promise<T> {
   const response = await fetch(url, {
+    signal: AbortSignal.timeout(30000),
     headers: {
       'User-Agent': 'PackPanel-Launcher-Engine/2.0',
       'Accept': 'application/json'

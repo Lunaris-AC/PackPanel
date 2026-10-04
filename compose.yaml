@@ -6,11 +6,11 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-packpanel}
       POSTGRES_USER: ${POSTGRES_USER:-packpanel}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-packpanel_secret_pass_123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U packpanel -d packpanel"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -26,16 +26,17 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgres://${POSTGRES_USER:-packpanel}:${POSTGRES_PASSWORD:-packpanel_secret_pass_123}@postgres:5432/${POSTGRES_DB:-packpanel}
+      DATABASE_URL: postgres://${POSTGRES_USER:-packpanel}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-packpanel}
       ADMIN_FQDN: ${ADMIN_FQDN:-panel.mccdn.internal}
       FILES_FQDN: ${FILES_FQDN:-mccdn.inferi.fr}
       ADMIN_ORIGIN_PORT: 3000
       DATA_DIR: /srv/packpanel
-      APP_DIR: /opt/packpanel
-      SESSION_SECRET: ${SESSION_SECRET:-packpanel_super_secret_session_key_32chars!}
+      APP_DIR: /app
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
       ADMIN_LOGIN: ${ADMIN_LOGIN:-admin}
+      ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-}
     volumes:
-      - /srv/packpanel:/srv/packpanel
+      - ${DATA_DIR:-/srv/packpanel}:/srv/packpanel
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,13 +51,14 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER:-packpanel}:${POSTGRES_PASSWORD:-packpanel_secret_pass_123}@postgres:5432/${POSTGRES_DB:-packpanel}
+      DATABASE_URL: postgres://${POSTGRES_USER:-packpanel}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-packpanel}
       ADMIN_FQDN: ${ADMIN_FQDN:-panel.mccdn.internal}
       FILES_FQDN: ${FILES_FQDN:-mccdn.inferi.fr}
       DATA_DIR: /srv/packpanel
-      APP_DIR: /opt/packpanel
+      APP_DIR: /app
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
     volumes:
-      - /srv/packpanel:/srv/packpanel
+      - ${DATA_DIR:-/srv/packpanel}:/srv/packpanel
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,15 +66,16 @@ services:
       - packpanel-internal
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      target: nginx
     container_name: packpanel-nginx
     restart: unless-stopped
     ports:
-      - "8080:8080" # Panel Admin & API
-      - "8081:8081" # Distribution publique MineLaunched uniquement
+      - "${ADMIN_ORIGIN_PORT:-8080}:8080" # Panel Admin & API
+      - "${FILES_ORIGIN_PORT:-8081}:8081" # Distribution publique MineLaunched uniquement
     volumes:
-      - ./frontend/dist:/usr/share/nginx/html:ro
-      - /srv/packpanel/storage/endpoints:/srv/packpanel/storage/endpoints:ro
+      - ${DATA_DIR:-/srv/packpanel}/storage/endpoints:/srv/packpanel/storage/endpoints:ro
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/admin.conf:/etc/nginx/conf.d/admin.conf:ro
       - ./docker/nginx/files.conf:/etc/nginx/conf.d/files.conf:ro

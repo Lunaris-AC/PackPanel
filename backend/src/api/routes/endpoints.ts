@@ -1,11 +1,14 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, requireRole, recordAuditLog } from '../../auth/middleware';
-import { config } from '../../config';
+import { authenticateRequest, requireRole, requireEndpointPermission, recordAuditLog } from '../../auth/middleware';
+import { config, getFilesBaseUrl } from '../../config';
 import { publishReleaseInternal } from '../../jobs/handlers/publish';
 import path from 'path';
 import { ENDPOINTS_DIR } from '../../config';
+import fs from 'fs';
+import { linkObjectToRelease } from '../../storage/cas';
+import { buildMineLaunchedManifest } from '../../storage/manifest';
 
 export async function endpointRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticateRequest);
@@ -24,7 +27,7 @@ export async function endpointRoutes(fastify: FastifyInstance) {
 
     const endpoints = res.rows.map(row => ({
       ...row,
-      manifest_url: `https://${config.FILES_FQDN}/${row.slug}/index.php`
+      manifest_url: `${getFilesBaseUrl()}/${row.slug}/index.php`
     }));
 
     return reply.send({ endpoints });
@@ -48,10 +51,11 @@ export async function endpointRoutes(fastify: FastifyInstance) {
     }
 
     const endpoint = res.rows[0];
+    if (req.user!.role !== 'admin') await query('INSERT INTO user_endpoint_permissions (user_id, endpoint_id, can_write, can_publish) VALUES ($1, $2, TRUE, TRUE)', [req.user!.userId, endpoint.id]);
     return reply.send({
       endpoint: {
         ...endpoint,
-        manifest_url: `https://${config.FILES_FQDN}/${endpoint.slug}/index.php`
+        manifest_url: `${getFilesBaseUrl()}/${endpoint.slug}/index.php`
       }
     });
   });
@@ -103,13 +107,13 @@ export async function endpointRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({
       endpoint: {
         ...endpoint,
-        manifest_url: `https://${config.FILES_FQDN}/${endpoint.slug}/index.php`
+        manifest_url: `${getFilesBaseUrl()}/${endpoint.slug}/index.php`
       }
     });
   });
 
   // Update endpoint
-  fastify.put('/:id', { preHandler: [requireRole(['admin', 'operator'])] }, async (req, reply) => {
+  fastify.put('/:id', { preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const schema = z.object({
       name: z.string().min(2).max(128).optional(),
@@ -161,7 +165,7 @@ export async function endpointRoutes(fastify: FastifyInstance) {
   });
 
   // Promote/Clone a release to another endpoint
-  fastify.post('/:id/promote', { preHandler: [requireRole(['admin', 'operator'])] }, async (req, reply) => {
+  fastify.post('/:id/promote', { preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')] }, async (req, reply) => {
     const { id: sourceEndpointId } = req.params as { id: string };
     const bodySchema = z.object({
       targetEndpointId: z.string().uuid(),
@@ -174,6 +178,10 @@ export async function endpointRoutes(fastify: FastifyInstance) {
     }
 
     const { targetEndpointId, releaseId } = parsed.data;
+    if (req.user!.role !== 'admin') {
+      const rights = await query('SELECT can_publish FROM user_endpoint_permissions WHERE user_id = $1 AND endpoint_id = $2', [req.user!.userId, targetEndpointId]);
+      if (!rights.rows[0]?.can_publish) return reply.status(403).send({ error: 'Publication sur la cible non autorisée' });
+    }
 
     const targetRes = await query('SELECT id, slug, cleanup_rules FROM endpoints WHERE id = $1', [targetEndpointId]);
     if (targetRes.rows.length === 0) {
@@ -185,7 +193,7 @@ export async function endpointRoutes(fastify: FastifyInstance) {
     let sourceRelQuery = 'SELECT * FROM releases WHERE endpoint_id = $1 AND is_active = TRUE';
     let params: any[] = [sourceEndpointId];
     if (releaseId) {
-      sourceRelQuery = 'SELECT * FROM releases WHERE endpoint_id = $1 AND (id = $2 OR release_id = $2)';
+      sourceRelQuery = 'SELECT * FROM releases WHERE endpoint_id = $1 AND (id::text = $2 OR release_id = $2)';
       params = [sourceEndpointId, releaseId];
     }
 
@@ -196,21 +204,30 @@ export async function endpointRoutes(fastify: FastifyInstance) {
     const sourceRel = sourceRelRes.rows[0];
 
     // Next version num in target
-    const maxVer = await query('SELECT COALESCE(MAX(version_num), 0) + 1 as next_v FROM releases WHERE endpoint_id = $1', [targetEndpointId]);
-    const nextVerNum = parseInt(maxVer.rows[0].next_v, 10);
-    const newReleaseIdStr = `r${String(nextVerNum).padStart(4, '0')}`;
+    let nextVerNum = 0;
+    let newReleaseIdStr = '';
 
     // Target directory
-    const newReleaseDir = path.join(ENDPOINTS_DIR, targetEndpoint.slug, 'releases', newReleaseIdStr);
-    const manifestJson = sourceRel.manifest_content;
+    let newReleaseDir = '';
+    let manifestJson: any;
 
     // Create target release
     const newRelId = await withTransaction(async (client) => {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || $1::text))`, [targetEndpointId]);
+      const maxVer = await client.query('SELECT COALESCE(MAX(version_num), 0) + 1 as next_v FROM releases WHERE endpoint_id = $1', [targetEndpointId]);
+      nextVerNum = parseInt(maxVer.rows[0].next_v, 10);
+      newReleaseIdStr = `r${String(nextVerNum).padStart(4, '0')}`;
+      newReleaseDir = path.join(ENDPOINTS_DIR, targetEndpoint.slug, 'releases', newReleaseIdStr);
+      fs.mkdirSync(newReleaseDir, { recursive: true, mode: 0o755 });
+      const files = await client.query('SELECT * FROM release_files WHERE release_id = $1', [sourceRel.id]);
+      for (const file of files.rows) if (!file.is_dir) linkObjectToRelease(file.sha256, path.join(newReleaseDir, file.relative_path));
+      manifestJson = buildMineLaunchedManifest(files.rows.map(file => ({ relativePath: file.relative_path, sha1: file.sha1, isDir: file.is_dir })), targetEndpoint.slug, newReleaseIdStr, getFilesBaseUrl(), targetEndpoint.cleanup_rules);
+      fs.writeFileSync(path.join(newReleaseDir, '.packpanel_manifest.json'), JSON.stringify(manifestJson));
       const relInsert = await client.query(
-        `INSERT INTO releases (endpoint_id, release_id, version_num, status, is_active, is_pinned, created_by_user_id, manifest_content, total_files, total_bytes)
-         VALUES ($1, $2, $3, 'draft', FALSE, FALSE, $4, $5, $6, $7)
+        `INSERT INTO releases (endpoint_id, release_id, version_num, status, is_active, is_pinned, created_by_user_id, manifest_content, total_files, total_bytes, game_config)
+         VALUES ($1, $2, $3, 'draft', FALSE, FALSE, $4, $5, $6, $7, $8)
          RETURNING id`,
-        [targetEndpointId, newReleaseIdStr, nextVerNum, req.user!.userId, manifestJson, sourceRel.total_files, sourceRel.total_bytes]
+        [targetEndpointId, newReleaseIdStr, nextVerNum, req.user!.userId, JSON.stringify(manifestJson), sourceRel.total_files, sourceRel.total_bytes, JSON.stringify(sourceRel.game_config || {})]
       );
       const targetRelDbId = relInsert.rows[0].id;
 

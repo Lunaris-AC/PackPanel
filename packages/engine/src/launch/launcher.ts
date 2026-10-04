@@ -4,6 +4,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { AuthProfile, InstanceManifestV2 } from '@packpanel/protocol';
 import { MojangVersionJson } from '../mojang/version.js';
+import { evaluateRules } from '../utils/platform.js';
 
 export interface LaunchOptions {
   javaPath: string;
@@ -23,6 +24,7 @@ export interface LaunchOptions {
 
 export class MinecraftLauncher extends EventEmitter {
   private process: ChildProcess | null = null;
+  private stopping = false;
 
   /**
    * Builds the complete list of JVM and Game arguments for launching Minecraft
@@ -44,10 +46,32 @@ export class MinecraftLauncher extends EventEmitter {
     const nativesDir = path.join(baseDir, 'natives', versionData.id);
     const assetsDir = path.join(baseDir, 'assets');
     const pathSeparator = process.platform === 'win32' ? ';' : ':';
+    const fullClasspath = [...classpath, clientJarPath].join(pathSeparator);
+    const serverAddress = manifest?.server?.address;
+    const placeholders: Record<string, string> = {
+      natives_directory: nativesDir, launcher_name: 'PackPanel', launcher_version: '2.0',
+      classpath: fullClasspath, classpath_separator: pathSeparator, library_directory: path.join(baseDir, 'libraries'),
+      auth_player_name: profile.name, version_name: versionData.id, game_directory: gameDir,
+      assets_root: assetsDir, game_assets: path.join(assetsDir, 'virtual', 'legacy'), assets_index_name: versionData.assetIndex?.id || versionData.assets || 'legacy',
+      auth_uuid: profile.id, auth_access_token: profile.accessToken, user_type: profile.userType === 'microsoft' ? 'msa' : 'legacy',
+      version_type: 'PackPanel', user_properties: '{}', auth_xuid: '', clientid: '',
+      resolution_width: String(options.windowWidth || 1280), resolution_height: String(options.windowHeight || 720),
+      quickPlayMultiplayer: serverAddress ? serverAddress + (manifest?.server?.port ? ':' + manifest.server.port : '') : ''
+    };
+    const features = { has_custom_resolution: Boolean(options.windowWidth && options.windowHeight), is_quick_play_multiplayer: Boolean(serverAddress) };
+    const substitute = (value: string) => value.replace(/\$\{([^}]+)\}/g, (match, key) => {
+      if (placeholders[key] === undefined) throw new Error(`Argument Minecraft inconnu: ${match}`);
+      return placeholders[key];
+    });
+    const expand = (args: NonNullable<MojangVersionJson['arguments']>['game'] = []) => args.flatMap(arg => {
+      if (typeof arg === 'string') return [substitute(arg)];
+      if (!evaluateRules(arg.rules, features)) return [];
+      return (Array.isArray(arg.value) ? arg.value : [arg.value]).map(substitute);
+    });
 
     // 1. JVM Arguments
     const jvmArgs: string[] = [
-      `-Xms${minMemoryMb}M`,
+      `-Xms${Math.min(minMemoryMb, maxMemoryMb)}M`,
       `-Xmx${maxMemoryMb}M`,
       `-Djava.library.path=${nativesDir}`,
       `-Dminecraft.launcher.brand=PackPanel`,
@@ -55,32 +79,17 @@ export class MinecraftLauncher extends EventEmitter {
     ];
 
     // Add versionData JVM args if present
-    if (versionData.arguments?.jvm) {
-      for (const arg of versionData.arguments.jvm) {
-        if (typeof arg === 'string') {
-          // Replace placeholders
-          const substituted = arg
-            .replace('${natives_directory}', nativesDir)
-            .replace('${launcher_name}', 'PackPanel')
-            .replace('${launcher_version}', '2.0')
-            .replace('${classpath}', '');
-          if (substituted && !substituted.includes('${')) {
-            jvmArgs.push(substituted);
-          }
-        }
-      }
-    }
+    jvmArgs.push(...expand(versionData.arguments?.jvm));
 
     // Add custom user / instance JVM args
     for (const customArg of customJvmArgs) {
-      if (customArg && !jvmArgs.includes(customArg)) {
+      if (customArg && !/^-Xm[sx]/.test(customArg) && !jvmArgs.includes(customArg)) {
         jvmArgs.push(customArg);
       }
     }
 
     // Full Classpath
-    const fullClasspath = [...classpath, clientJarPath].join(pathSeparator);
-    jvmArgs.push('-cp', fullClasspath);
+    if (!jvmArgs.includes('-cp') && !jvmArgs.includes('-classpath')) jvmArgs.push('-cp', fullClasspath);
 
     // 2. Main Class
     const mainClass = versionData.mainClass || 'net.minecraft.client.main.Main';
@@ -90,19 +99,10 @@ export class MinecraftLauncher extends EventEmitter {
 
     if (versionData.minecraftArguments) {
       // Legacy argument template (1.12 and earlier)
-      const legacyArgs = versionData.minecraftArguments
-        .replace('${auth_player_name}', profile.name)
-        .replace('${version_name}', versionData.id)
-        .replace('${game_directory}', gameDir)
-        .replace('${assets_root}', assetsDir)
-        .replace('${game_assets}', assetsDir)
-        .replace('${assets_index_name}', versionData.assetIndex?.id || 'legacy')
-        .replace('${auth_uuid}', profile.id)
-        .replace('${auth_access_token}', profile.accessToken)
-        .replace('${user_type}', profile.userType === 'microsoft' ? 'msa' : 'legacy')
-        .replace('${version_type}', 'PackPanel')
-        .split(' ');
+      const legacyArgs = versionData.minecraftArguments.split(' ').map(substitute);
       gameArgs.push(...legacyArgs);
+    } else if (versionData.arguments?.game?.length) {
+      gameArgs.push(...expand(versionData.arguments.game));
     } else {
       // Modern arguments
       gameArgs.push(
@@ -119,15 +119,19 @@ export class MinecraftLauncher extends EventEmitter {
     }
 
     // Optional window dimensions
-    if (options.windowWidth && options.windowHeight) {
+    if (options.windowWidth && options.windowHeight && !gameArgs.includes('--width')) {
       gameArgs.push('--width', String(options.windowWidth), '--height', String(options.windowHeight));
     }
 
     // Server quick-connect if specified in manifest
-    if (manifest?.server?.address) {
-      gameArgs.push('--server', manifest.server.address);
-      if (manifest.server.port) {
-        gameArgs.push('--port', String(manifest.server.port));
+    if (serverAddress && !gameArgs.includes('--quickPlayMultiplayer')) {
+      const modern = !versionData.minecraftArguments && !/^1\.(?:[0-9]|1[0-9])(?:\.|$)/.test(versionData.id);
+      if (modern) gameArgs.push('--quickPlayMultiplayer', placeholders.quickPlayMultiplayer);
+      else {
+        const match = serverAddress.match(/^(.+):(\d+)$/);
+        gameArgs.push('--server', match ? match[1] : serverAddress);
+        const port = manifest?.server?.port || (match ? Number(match[2]) : undefined);
+        if (port) gameArgs.push('--port', String(port));
       }
     }
 
@@ -149,6 +153,7 @@ export class MinecraftLauncher extends EventEmitter {
     });
 
     this.process = proc;
+    this.stopping = false;
 
     proc.stdout.on('data', (data) => {
       const text = data.toString('utf8');
@@ -166,7 +171,7 @@ export class MinecraftLauncher extends EventEmitter {
 
     proc.on('close', (code, signal) => {
       this.process = null;
-      if (code !== 0 && code !== null) {
+      if (code !== 0 && code !== null && !this.stopping) {
         // Check for latest crash report
         const crashDir = path.join(options.gameDir, 'crash-reports');
         let latestCrashContent: string | null = null;
@@ -199,6 +204,7 @@ export class MinecraftLauncher extends EventEmitter {
    */
   kill(): void {
     if (this.process) {
+      this.stopping = true;
       this.process.kill();
     }
   }

@@ -27,7 +27,7 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   }
 
   // Only set Content-Type to application/json if body is not FormData
-  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+  if (options.body !== undefined && !(options.body instanceof FormData) && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -58,6 +58,16 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
 }
 
 export const api = {
+  download: async (endpoint: string) => {
+    const token = localStorage.getItem('packpanel_token');
+    const response = await fetch(`${BASE_URL}${endpoint}`, { credentials: 'include', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!response.ok) throw new ApiError('Téléchargement impossible', response.status);
+    const filename = response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] || 'launcher.zip';
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement('a');
+    anchor.href = url; anchor.download = filename; anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  },
   get: <T = any>(url: string, params?: Record<string, any>) => {
     let query = '';
     if (params) {

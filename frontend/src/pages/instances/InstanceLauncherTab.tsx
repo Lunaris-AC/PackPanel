@@ -21,6 +21,8 @@ import {
 import { api } from '../../api/client';
 import { MinecraftInstance, LauncherProjectWithBuilds, LauncherBuild } from '../../types';
 import { useToast } from '../../components/Toast';
+import { useTranslation } from '../../i18n';
+import launcherLandscape from '../../../../packages/launcher/src/renderer/landscape.svg';
 
 interface InstanceLauncherTabProps {
   instance: MinecraftInstance;
@@ -37,6 +39,8 @@ function formatBytes(bytes?: number | null) {
 
 export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instance, onRefresh }) => {
   const { toast } = useToast();
+  const { language } = useTranslation();
+  const text = (fr: string, en: string) => language === 'fr' ? fr : en;
   const [loading, setLoading] = useState(false);
   const [building, setBuilding] = useState(false);
   const [targetOs, setTargetOs] = useState<'windows' | 'linux' | 'macos' | 'all'>('windows');
@@ -51,7 +55,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
   const [accentColor, setAccentColor] = useState(launcher?.accent_color || '#6366f1');
   const [backgroundUrl, setBackgroundUrl] = useState(launcher?.background_url || '');
   const [logoUrl, setLogoUrl] = useState(launcher?.logo_url || '');
-  const [authMicrosoft, setAuthMicrosoft] = useState(launcher?.auth_microsoft ?? true);
+  const [authMicrosoft, setAuthMicrosoft] = useState(launcher?.auth_microsoft ?? false);
   const [authOffline, setAuthOffline] = useState(launcher?.auth_offline ?? true);
   const [discordUrl, setDiscordUrl] = useState(launcher?.discord_url || '');
   const [websiteUrl, setWebsiteUrl] = useState(launcher?.website_url || '');
@@ -70,7 +74,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
       setAccentColor(launcher.accent_color || '#6366f1');
       setBackgroundUrl(launcher.background_url || '');
       setLogoUrl(launcher.logo_url || '');
-      setAuthMicrosoft(launcher.auth_microsoft ?? true);
+      setAuthMicrosoft(launcher.auth_microsoft ?? false);
       setAuthOffline(launcher.auth_offline ?? true);
       setDiscordUrl(launcher.discord_url || '');
       setWebsiteUrl(launcher.website_url || '');
@@ -300,34 +304,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               </div>
             </div>
 
-            {/* Template Selection */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">
-                Modèle d'interface (Template)
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {[
-                  { id: 'minimal', title: 'Minimal', desc: '1 bouton Jouer épuré' },
-                  { id: 'community', title: 'Community', desc: 'Actualités & Discord' },
-                  { id: 'network', title: 'Network', desc: 'Sélecteur de serveurs' }
-                ].map(tpl => (
-                  <button
-                    key={tpl.id}
-                    type="button"
-                    onClick={() => setTemplate(tpl.id as any)}
-                    className={`p-3 rounded-xl border text-left transition ${
-                      template === tpl.id
-                        ? 'border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/20 ring-1 ring-indigo-600'
-                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-950/40'
-                    }`}
-                  >
-                    <p className="font-bold text-xs text-zinc-900 dark:text-zinc-100">{tpl.title}</p>
-                    <p className="text-[10px] text-zinc-500 mt-0.5">{tpl.desc}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
+            <p className="text-xs text-zinc-500">Le launcher est dédié à cette instance. Les joueurs saisissent leur pseudo et cliquent sur Jouer ; la mémoire, les arguments JVM et les fichiers du jeu sont accessibles dans les paramètres.</p>
             {/* Media Uploads: Logo & Background (Direct into CAS) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               {/* Logo */}
@@ -482,86 +459,36 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               Aperçu en direct du launcher
             </h3>
 
-            {/* Window Container */}
-            <div className="rounded-xl overflow-hidden border border-zinc-300 dark:border-zinc-700/80 shadow-md bg-zinc-950 text-white relative">
-              {/* Window Titlebar */}
-              <div className="h-6 bg-zinc-900 px-3 flex items-center justify-between text-[10px] font-mono text-zinc-400 border-b border-zinc-800">
-                <span className="truncate">{title || 'Mon Launcher'}</span>
-                <div className="flex items-center space-x-1.5">
-                  <span className="w-2 h-2 rounded-full bg-zinc-700"></span>
-                  <span className="w-2 h-2 rounded-full bg-zinc-700"></span>
-                  <span className="w-2 h-2 rounded-full bg-rose-500/80"></span>
-                </div>
+            {/* Preview mirrors the instance-bound desktop layout. */}
+            <div className="rounded-xl overflow-hidden border border-zinc-300 dark:border-zinc-700/80 shadow-md bg-[#101114] text-white">
+              <div className="h-7 bg-[#141519] px-3 flex items-center justify-between text-[9px] border-b border-white/5">
+                <span className="truncate font-semibold">{title || `${instance.name} Launcher`}</span>
+                <div className="flex items-center gap-3 text-zinc-500"><span className="text-[8px]">FR / EN</span><span>−</span><span>□</span><span>×</span></div>
               </div>
-
-              {/* Window Body Mockup */}
-              <div
-                className="h-56 relative flex flex-col justify-between p-4 bg-cover bg-center transition-all duration-300"
-                style={{
-                  backgroundImage: backgroundUrl ? `url(${backgroundUrl})` : undefined,
-                  backgroundColor: backgroundUrl ? undefined : '#09090b'
-                }}
-              >
-                {/* Overlay gradient for readability */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/30 pointer-events-none" />
-
-                {/* Top header inside launcher */}
-                <div className="relative z-10 flex items-center justify-between">
-                  {logoUrl ? (
-                    <img src={logoUrl} alt="Logo" className="h-7 max-w-[120px] object-contain" />
-                  ) : (
-                    <span className="font-extrabold text-sm tracking-tight text-white drop-shadow">
-                      {title}
-                    </span>
-                  )}
-
-                  <div className="flex items-center space-x-2 text-[10px]">
-                    {discordUrl && (
-                      <span className="px-1.5 py-0.5 rounded bg-white/10 backdrop-blur-xs flex items-center gap-1">
-                        <MessageSquare className="w-2.5 h-2.5" /> Discord
-                      </span>
-                    )}
-                    {websiteUrl && (
-                      <span className="px-1.5 py-0.5 rounded bg-white/10 backdrop-blur-xs flex items-center gap-1">
-                        <Globe className="w-2.5 h-2.5" /> Web
-                      </span>
-                    )}
+              <div className="flex min-h-56">
+                <div className="w-[75px] shrink-0 border-r border-white/5 bg-[#16171d] p-2 space-y-3">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${accentColor}18`, color: accentColor }}>
+                    {logoUrl ? <img src={logoUrl} alt="Logo" className="w-5 h-5 object-contain" /> : <Layers className="w-4 h-4" />}
+                  </div>
+                  <div className="text-[8px] rounded p-1.5" style={{ backgroundColor: `${accentColor}18`, color: accentColor }}>{text('Jouer', 'Play')}</div>
+                  <div className="text-[8px] text-zinc-500 p-1.5">{text('Paramètres', 'Settings')}</div>
+                </div>
+                <div className="flex-1 min-w-0 p-3 space-y-3">
+                  <div className="h-28 rounded-lg bg-cover bg-center relative overflow-hidden p-3" style={{ backgroundImage: `linear-gradient(90deg,#171b25ed,#171b2560),url(${JSON.stringify(backgroundUrl || launcherLandscape)})` }}>
+                    <span className="text-[6px] tracking-widest text-zinc-400">{text('VOTRE PROCHAINE AVENTURE', 'YOUR NEXT ADVENTURE')}</span>
+                    <div className="font-bold text-sm tracking-tight mt-2 truncate">{title}</div>
+                    <span className="text-[8px] text-zinc-400 block mt-2">{instance.name}</span>
+                  </div>
+                  <div className="rounded-lg border border-white/5 bg-[#1b1c23] p-2.5">
+                    <div className="font-semibold text-[9px]">{text('L’aventure vous attend.', 'Your adventure awaits.')}</div>
+                    <div className="flex gap-2 mt-2 items-center">
+                      <div className="flex-1 min-w-0 rounded bg-[#111217] border border-white/5 px-2 py-1.5 text-[8px] text-zinc-500">{text('Votre pseudo', 'Your nickname')}</div>
+                      <span style={{ backgroundColor: accentColor }} className="px-3 py-1.5 rounded text-white font-semibold text-[8px] flex items-center gap-1"><Play className="w-2 h-2 fill-white" />{text('Jouer', 'Play')}</span>
+                    </div>
                   </div>
                 </div>
-
-                {/* Center / Template Content */}
-                <div className="relative z-10">
-                  {template === 'community' && (
-                    <div className="bg-white/10 backdrop-blur-md border border-white/10 rounded-lg p-2 max-w-[200px]">
-                      <span className="text-[9px] font-bold uppercase text-white/80 block">Actualités</span>
-                      <p className="text-[10px] text-zinc-300 line-clamp-1">Bienvenue sur la mise à jour {instance.minecraft_version} !</p>
-                    </div>
-                  )}
-                  {template === 'network' && (
-                    <div className="bg-white/10 backdrop-blur-md border border-white/10 rounded-lg p-2 max-w-[220px]">
-                      <span className="text-[9px] font-bold uppercase text-white/80 block">Serveur principal</span>
-                      <p className="text-[10px] text-emerald-400 font-mono">En ligne • {instance.server_address || 'play.server.net'}</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Bottom Bar inside launcher */}
-                <div className="relative z-10 flex items-center justify-between pt-2 border-t border-white/15">
-                  <div className="text-[10px] text-zinc-300">
-                    <span className="font-bold text-white block">{instance.name}</span>
-                    <span className="text-zinc-400 font-mono text-[9px]">{instance.minecraft_version} • {instance.loader_type}</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    style={{ backgroundColor: accentColor }}
-                    className="px-4 py-1.5 rounded-lg text-white font-bold text-xs shadow-lg hover:brightness-110 transition flex items-center gap-1.5 pointer-events-none"
-                  >
-                    <Play className="w-3 h-3 fill-white" />
-                    JOUER
-                  </button>
-                </div>
               </div>
+              <div className="h-6 border-t border-white/5 px-3 flex items-center gap-1.5 text-[7px] text-zinc-500"><span className="w-1 h-1 rounded-full bg-emerald-400/60" />{text('Prêt à jouer.', 'Ready to play.')}</div>
             </div>
           </div>
 
@@ -575,7 +502,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             </div>
 
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Génère le package d'installation complet autonome pour vos joueurs, incluant le runtime PackPanel, les scripts de démarrage et la configuration signée.
+              {text('Génère un launcher autonome dédié à cette instance, avec son runtime et sa configuration.', 'Builds a standalone launcher for this instance, including its runtime and configuration.')}
             </p>
 
             <div className="grid grid-cols-2 gap-2">
@@ -677,14 +604,14 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                       {new Date(b.created_at).toLocaleString()}
                     </td>
                     <td className="py-3 px-3 text-right">
-                      <a
-                        href={`/api/v2/instances/${instance.id}/launcher/builds/${b.id}/download`}
-                        download
+                      <button
+                        type="button"
+                        onClick={() => api.download(`/v2/instances/${instance.id}/launcher/builds/${b.id}/download`).catch(error => toast.error(error.message))}
                         className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold text-xs transition shadow-2xs"
                       >
                         <Download className="w-3.5 h-3.5" />
                         Télécharger
-                      </a>
+                      </button>
                     </td>
                   </tr>
                 ))}

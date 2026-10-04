@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { query, withTransaction } from '../db';
-import { config, ENDPOINTS_DIR, STAGING_DIR } from '../config';
+import { config, ENDPOINTS_DIR, STAGING_DIR, getFilesBaseUrl } from '../config';
 import { storeObjectFromPath, linkObjectToRelease } from '../storage/cas';
 import { hashFile } from '../storage/hasher';
 import { sanitizeRelativePath, assertSanitizedRelativePath } from '../storage/paths';
@@ -145,7 +145,7 @@ Usage:
       manifestInput,
       slug,
       releaseIdStr,
-      config.FILES_FQDN,
+      getFilesBaseUrl(),
       endpoint.cleanup_rules || ['mods']
     );
 
@@ -182,7 +182,7 @@ Usage:
     // Publish atomically
     await publishReleaseInternal(endpoint.id, newRelId, slug, manifestJson, releaseDir);
     console.log(`[PackPanel CLI] Version ${releaseIdStr} scellée et publiée avec succès !`);
-    console.log(`URL: https://${config.FILES_FQDN}/${slug}/index.php`);
+    console.log(`URL: ${getFilesBaseUrl()}/${slug}/index.php`);
     process.exit(0);
   }
 

@@ -17,7 +17,7 @@ import {
  */
 export async function resolveJavaRequirement(
   minecraftVersion: string,
-  loader: LoaderType,
+  loader: LoaderType = 'vanilla',
   loaderVersion?: string
 ): Promise<JavaRequirement> {
   let majorVersion: number | null = null;
@@ -95,12 +95,13 @@ export async function resolveJavaRequirement(
 export async function getAvailableLoadersForMinecraft(
   minecraftVersion: string
 ): Promise<LoaderCompatibilitySummary[]> {
-  const [fabricAvail, quiltAvail, neoAvail, forgeAvail] = await Promise.all([
-    isFabricAvailableForMinecraft(minecraftVersion).catch(() => false),
-    isQuiltAvailableForMinecraft(minecraftVersion).catch(() => false),
-    isNeoForgeAvailableForMinecraft(minecraftVersion).catch(() => false),
-    isForgeAvailableForMinecraft(minecraftVersion).catch(() => false)
+  const results = await Promise.allSettled([
+    isFabricAvailableForMinecraft(minecraftVersion),
+    isQuiltAvailableForMinecraft(minecraftVersion),
+    isNeoForgeAvailableForMinecraft(minecraftVersion),
+    isForgeAvailableForMinecraft(minecraftVersion)
   ]);
+  const [fabricAvail, quiltAvail, neoAvail, forgeAvail] = results.map(r => r.status === 'fulfilled' && r.value);
 
   const loaders: LoaderCompatibilitySummary[] = [
     {
@@ -140,6 +141,11 @@ export async function getAvailableLoadersForMinecraft(
     }
   ];
 
+  loaders.forEach((entry, index) => {
+    if (index > 0 && results[index - 1].status === 'rejected') {
+      entry.error = 'Le catalogue officiel est temporairement indisponible. Réessayez dans quelques instants.';
+    }
+  });
   return loaders;
 }
 

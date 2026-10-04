@@ -25,7 +25,7 @@ export interface CatalogLoaderVersionsResponse {
 }
 
 export interface CatalogRequirementsResponse {
-  requirement: JavaRequirement;
+  requirements: JavaRequirement;
 }
 
 export interface CatalogValidateResponse {
@@ -37,7 +37,7 @@ export interface CatalogValidateResponse {
 
 export const catalogApi = {
   getMinecraftVersions: () =>
-    api.get<CatalogVersionsResponse>('/v2/catalog/minecraft'),
+    api.get<CatalogVersionsResponse>('/v2/catalog/minecraft', { type: 'all' }),
 
   getCompatibleLoaders: (mcVersion: string) =>
     api.get<CatalogLoadersResponse>('/v2/catalog/loaders', { mcVersion }),
@@ -50,7 +50,7 @@ export const catalogApi = {
 
   validateCombination: (mcVersion: string, loader: LoaderType, loaderVersion?: string) =>
     api.post<CatalogValidateResponse>('/v2/catalog/validate', {
-      mcVersion,
+      minecraftVersion: mcVersion,
       loader,
       loaderVersion: loaderVersion || undefined
     })

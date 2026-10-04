@@ -3,10 +3,11 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import { config } from '../config';
+import { query } from '../db';
 import { sseManager } from './sse';
 import { authRoutes } from './routes/auth';
 import { endpointRoutes } from './routes/endpoints';
-import { uploadRoutes, tusServer } from './routes/uploads';
+import { uploadRoutes, tusServer, authorizeTusRequest } from './routes/uploads';
 import { explorerRoutes } from './routes/explorer';
 import { versionRoutes } from './routes/versions';
 import { jobRoutes } from './routes/jobs';
@@ -15,6 +16,7 @@ import { userRoutes } from './routes/users';
 import { instanceRoutes } from './routes/instances';
 import { launcherRoutes } from './routes/launchers';
 import { catalogRoutes } from './routes/catalog';
+import { systemRoutes } from './routes/system';
 
 import { authenticateRequest, enforceOriginCheck, isAllowedOrigin } from '../auth/middleware';
 
@@ -58,9 +60,14 @@ async function main() {
 
   // 2. Healthcheck
   server.get('/api/health', async (req, reply) => {
+    try { await query('SELECT 1'); }
+    catch (error) {
+      req.log.error({ err: error }, 'Database readiness check failed');
+      return reply.status(503).send({ status: 'unavailable' });
+    }
     return reply.send({
       status: 'ok',
-      version: '1.0.0',
+      version: '2.0.0',
       timestamp: new Date().toISOString()
     });
   });
@@ -73,13 +80,14 @@ async function main() {
   });
 
   // 4. TUS Resumable Upload Handlers (authenticated)
+  server.addContentTypeParser('application/offset+octet-stream', (_request, payload, done) => done(null, payload));
   const handleTus = async (req: any, reply: any) => {
     reply.hijack();
     tusServer.handle(req.raw, reply.raw);
   };
 
-  server.all('/api/uploads/tus', { preHandler: [authenticateRequest] }, handleTus);
-  server.all('/api/uploads/tus/*', { preHandler: [authenticateRequest] }, handleTus);
+  server.all('/api/uploads/tus', { preHandler: [authenticateRequest, authorizeTusRequest] }, handleTus);
+  server.all('/api/uploads/tus/*', { preHandler: [authenticateRequest, authorizeTusRequest] }, handleTus);
 
   // 5. Register modular API routes
   await server.register(authRoutes, { prefix: '/api/auth' });
@@ -93,16 +101,18 @@ async function main() {
   await server.register(instanceRoutes, { prefix: '/api/v2' });
   await server.register(launcherRoutes, { prefix: '/api/v2' });
   await server.register(catalogRoutes, { prefix: '/api/v2' });
+  await server.register(systemRoutes, { prefix: '/api/system' });
 
   // Custom global error handler
   server.setErrorHandler((error, request, reply) => {
-    if (error.name === 'InvalidPathError' || (error as any).statusCode === 400) {
-      return reply.status(400).send({ error: error.message });
+    const err = error as Error & { statusCode?: number };
+    if (err.name === 'InvalidPathError' || err.statusCode === 400) {
+      return reply.status(400).send({ error: err.message });
     }
     server.log.error(error);
-    const statusCode = error.statusCode || 500;
+    const statusCode = err.statusCode || 500;
     return reply.status(statusCode).send({
-      error: error.message || 'Erreur interne du serveur'
+      error: statusCode >= 500 ? 'Erreur interne du serveur' : err.message
     });
   });
 
@@ -119,8 +129,8 @@ async function main() {
 
   try {
     const address = await server.listen({
-      port: config.ADMIN_ORIGIN_PORT,
-      host: '0.0.0.0'
+      port: config.PORT,
+      host: config.HOST
     });
     server.log.info(`PackPanel API opérationnelle sur ${address}`);
   } catch (err) {

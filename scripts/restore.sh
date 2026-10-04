@@ -1,54 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 cd "$(dirname "$0")/.."
-
-
-FORCE=false
-BACKUP_FILE=""
-
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    -y|--yes)
-      FORCE=true
-      shift
-      ;;
-    *)
-      BACKUP_FILE="$1"
-      shift
-      ;;
-  esac
-done
-
-if [ -z "$BACKUP_FILE" ] || [ ! -f "$BACKUP_FILE" ]; then
-  echo "Erreur: Fichier de sauvegarde introuvable ou non spécifié : $BACKUP_FILE"
-  echo "Usage: $0 [-y] <chemin_archive_backup.tar.gz>"
-  exit 1
+YES=false
+if [ "${1:-}" = '--yes' ]; then YES=true; shift; fi
+BACKUP_FILE=${1:?Usage: restore.sh [--yes] backup.tar.gz}
+test -f "$BACKUP_FILE"
+if [ "$YES" = false ]; then
+  read -rp 'Replace the database and restore the distribution from this backup? [yes/NO] ' ANSWER
+  [ "$ANSWER" = yes ] || exit 0
 fi
-
-if [ "$FORCE" = false ]; then
-  read -p "Attention : Cette opération va écraser la base PostgreSQL et restaurer les objets CAS. Continuer ? (o/N) " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Oo]$ ]]; then
-    echo "Restauration annulée."
-    exit 0
-  fi
-fi
-
+DATA_DIR=$(docker compose config --environment | sed -n 's/^DATA_DIR=//p')
+DATA_DIR=${DATA_DIR:-/srv/packpanel}
+[ "$DATA_DIR" != '/' ] && [ -d "$DATA_DIR/storage" ]
 TEMP_DIR=$(mktemp -d)
-
-echo "1. Extraction de l'archive..."
+trap 'rm -rf -- "$TEMP_DIR"' EXIT
 tar -xzf "$BACKUP_FILE" -C "$TEMP_DIR"
-
-echo "2. Restauration des objets CAS..."
-mkdir -p /srv/packpanel/storage/objects
-cp -rn "${TEMP_DIR}/objects/"* /srv/packpanel/storage/objects/ 2>/dev/null || true
-
-echo "3. Restauration de la base PostgreSQL..."
-docker compose exec -T postgres psql -U packpanel -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'packpanel' AND pid <> pg_backend_pid();" || true
-docker compose exec -T postgres psql -U packpanel -d postgres -c "DROP DATABASE IF EXISTS packpanel;"
-docker compose exec -T postgres psql -U packpanel -d postgres -c "CREATE DATABASE packpanel OWNER packpanel;"
-docker compose exec -T postgres psql -U packpanel -d packpanel < "${TEMP_DIR}/database.sql"
-
-rm -rf "$TEMP_DIR"
-echo "✓ Restauration terminée avec succès !"
+test -s "$TEMP_DIR/database.dump"
+test -d "$TEMP_DIR/storage"
+docker compose stop api worker
+docker compose exec -T postgres sh -c 'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB"; createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose exec -T postgres sh -c 'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$TEMP_DIR/database.dump"
+cp -a "$TEMP_DIR/storage/." "$DATA_DIR/storage/"
+if [ -d "$TEMP_DIR/builds" ]; then mkdir -p "$DATA_DIR/builds"; cp -a "$TEMP_DIR/builds/." "$DATA_DIR/builds/"; fi
+if [ -f "$TEMP_DIR/public-config.json" ]; then cp "$TEMP_DIR/public-config.json" "$DATA_DIR/public-config.json"; fi
+docker compose start api worker
+ADMIN_ADDRESS=$(docker compose port nginx 8080 | head -n 1)
+if [ -n "$ADMIN_ADDRESS" ]; then
+  ADMIN_PORT=${ADMIN_ADDRESS##*:}
+  curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 --max-time 5 "http://127.0.0.1:$ADMIN_PORT/api/health" >/dev/null
+fi
+echo 'Database, storage and launcher artifacts restored. The archived environment.env is retained for manual credential recovery.'

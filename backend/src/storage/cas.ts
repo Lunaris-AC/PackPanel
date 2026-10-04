@@ -149,4 +149,7 @@ export function linkObjectToRelease(sha256: string, destinationFilePath: string)
     // Fallback to copy if hardlink is not supported across filesystem boundaries
     fs.copyFileSync(sourcePath, destinationFilePath);
   }
+  // Published files are read by the unprivileged Nginx container. CAS parent
+  // directories remain private, including when this is a shared inode.
+  fs.chmodSync(destinationFilePath, 0o644);
 }

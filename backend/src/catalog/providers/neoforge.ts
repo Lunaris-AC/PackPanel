@@ -5,7 +5,10 @@ const NEOFORGE_MAVEN_META_URL = 'https://maven.neoforged.net/releases/net/neofor
 const TIMEOUT_MS = 8000;
 
 export function getNeoForgePrefixForMinecraft(mcVersion: string): string | null {
-  // e.g. 1.20.4 -> 20.4., 1.21.1 -> 21.1., 1.20.1 -> 20.1.
+  // NeoForge 1.20.1 uses the legacy net.neoforged:forge artifact.
+  if (mcVersion === '1.20.1') return null;
+  const modern = mcVersion.match(/^(\d{2})\.(\d+)(?:\.\d+)?$/);
+  if (modern) return `${modern[1]}.${modern[2]}.`;
   const match = mcVersion.match(/^1\.(\d+)(?:\.(\d+))?$/);
   if (!match) return null;
   const major = parseInt(match[1], 10);
@@ -32,14 +35,6 @@ export async function fetchAllNeoForgeVersions(): Promise<string[]> {
           versions.push(match[1]);
         }
         return versions;
-      } catch (err) {
-        return [
-          '21.1.252', '21.1.0',
-          '20.6.119', '20.6.0',
-          '20.4.237', '20.4.0',
-          '20.2.88', '20.2.0',
-          '20.1.100', '20.1.0'
-        ];
       } finally {
         clearTimeout(timer);
       }
@@ -65,14 +60,15 @@ export async function fetchNeoForgeLoaderVersions(mcVersion: string): Promise<Lo
   const allVersions = await fetchAllNeoForgeVersions();
   const matching = allVersions.filter(v => v.startsWith(prefix));
 
-  // Reverse so newest is first
-  matching.reverse();
+  matching.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
 
   const entries: LoaderVersionEntry[] = matching.map((v, idx) => ({
     version: v,
     stable: !v.includes('beta') && !v.includes('alpha'),
-    isRecommended: idx === 0
+    isRecommended: false
   }));
+  const recommended = entries.find(e => e.stable) || entries[0];
+  if (recommended) recommended.isRecommended = true;
 
   return entries;
 }

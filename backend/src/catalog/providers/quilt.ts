@@ -63,10 +63,12 @@ export async function fetchQuiltLoaderVersions(mcVersion: string): Promise<Loade
 
   const entries: LoaderVersionEntry[] = result.data.map((item, idx) => ({
     version: item.loader.version,
-    stable: true,
+    stable: !/alpha|beta|rc/i.test(item.loader.version),
     buildNumber: item.loader.build,
     isRecommended: idx === 0
   }));
+  const recommended = entries.find(e => e.stable) || entries[0];
+  entries.forEach(e => { e.isRecommended = e === recommended; });
 
   return entries;
 }

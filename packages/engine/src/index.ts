@@ -11,6 +11,7 @@ export * from './launch/launcher.js';
 export * from './utils/http.js';
 export * from './utils/hasher.js';
 export * from './utils/platform.js';
+export * from './utils/arguments.js';
 
 import path from 'path';
 import { EventEmitter } from 'events';
@@ -33,6 +34,8 @@ export class MinecraftEngine extends EventEmitter {
   private mojang: MojangVersionResolver;
   private java: JavaRuntimeManager;
   private launcher: MinecraftLauncher;
+  private preparationCancelled = false;
+  private preparing = false;
 
   constructor(config: EngineConfig) {
     super();
@@ -62,10 +65,13 @@ export class MinecraftEngine extends EventEmitter {
     windowWidth?: number;
     windowHeight?: number;
   }): Promise<void> {
+    this.preparationCancelled = false;
+    this.preparing = true;
     const notify = (step: EngineProgressEvent['step'], progress: number, message: string) => {
+      if (this.preparationCancelled) return;
       this.emit('progress', { step, progress, message } as EngineProgressEvent);
     };
-
+    try {
     // 1. Fetch manifest
     notify('resolving_version', 5, 'Récupération du manifeste de l\'instance...');
     const manifest = await InstanceSynchronizer.fetchManifest(options.manifestUrl);
@@ -98,10 +104,10 @@ export class MinecraftEngine extends EventEmitter {
         versionData = await QuiltLoaderResolver.mergeQuiltVersion(versionData, manifest.minecraftVersion, manifest.loader.version);
       } else if (manifest.loader.type === 'forge') {
         const forge = new ForgeLoaderResolver(this.baseDir);
-        versionData = await forge.mergeForgeVersion(versionData, manifest.minecraftVersion, manifest.loader.version || '');
+        versionData = await forge.mergeForgeVersion(versionData, manifest.minecraftVersion, manifest.loader.version || '', javaExec);
       } else if (manifest.loader.type === 'neoforge') {
         const neoforge = new NeoForgeLoaderResolver(this.baseDir);
-        versionData = await neoforge.mergeNeoForgeVersion(versionData, manifest.minecraftVersion, manifest.loader.version || '');
+        versionData = await neoforge.mergeNeoForgeVersion(versionData, manifest.minecraftVersion, manifest.loader.version || '', javaExec);
       }
     }
 
@@ -118,9 +124,13 @@ export class MinecraftEngine extends EventEmitter {
 
     // 8. Download Minecraft assets
     notify('downloading_assets', 90, 'Vérification des textures et sons...');
-    await this.mojang.resolveAssets(versionData);
+    await this.mojang.resolveAssets(versionData, (done, total) => {
+      notify('downloading_assets', Math.floor(90 + (done / (total || 1)) * 7), `Textures et sons (${done}/${total})...`);
+    });
 
     // 9. Launch Minecraft Process
+    if (this.preparationCancelled) { this.emit('exit', { exitCode: 0 }); return; }
+    this.preparing = false;
     notify('launching', 98, 'Démarrage du processus Minecraft...');
     this.launcher.launch({
       javaPath: javaExec,
@@ -133,18 +143,26 @@ export class MinecraftEngine extends EventEmitter {
       manifest,
       minMemoryMb: options.minMemoryMb || 1024,
       maxMemoryMb: options.maxMemoryMb || manifest.java?.recommendedMemoryMb || 4096,
-      customJvmArgs: options.customJvmArgs || manifest.java?.jvmArgs,
+      customJvmArgs: [...(manifest.java?.jvmArgs || []), ...(options.customJvmArgs || [])],
       windowWidth: options.windowWidth,
       windowHeight: options.windowHeight
     });
 
     notify('running', 100, 'Minecraft est en cours d\'exécution.');
+    } catch (error) {
+      if (this.preparationCancelled) this.emit('exit', { exitCode: 0 });
+      else throw error;
+    } finally { this.preparing = false; }
   }
 
   /**
    * Stops the currently running instance.
    */
   stopInstance(): void {
+    if (this.preparing) {
+      this.preparationCancelled = true;
+      this.emit('progress', { step: 'idle', progress: 0, message: 'Arrêt en cours de la préparation...' });
+    }
     this.launcher.kill();
   }
 }

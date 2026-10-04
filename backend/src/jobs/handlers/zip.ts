@@ -8,9 +8,11 @@ import { config, UPLOADS_DIR } from '../../config';
 import { JobQueue } from '../queue';
 
 export interface ExtractZipPayload {
-  zipFilePath: string;
+  zipFilePath?: string;
+  zipPath?: string;
+  sessionId?: string;
   endpointId: string;
-  userId: string;
+  userId?: string;
   mode: 'add_replace' | 'full_replace';
   stripRootFolder?: boolean;
 }
@@ -25,9 +27,10 @@ export function openZip(zipPath: string): Promise<yauzl.ZipFile> {
 }
 
 export async function handleExtractZipImport(payload: ExtractZipPayload): Promise<void> {
-  const { zipFilePath, endpointId, userId, mode, stripRootFolder = false } = payload;
+  const { endpointId, userId, mode, stripRootFolder = false } = payload;
+  const zipFilePath = payload.zipFilePath || payload.zipPath;
 
-  if (!fs.existsSync(zipFilePath)) {
+  if (!zipFilePath || !fs.existsSync(zipFilePath)) {
     throw new Error(`Archive ZIP introuvable : ${zipFilePath}`);
   }
 
@@ -99,12 +102,13 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
   fs.mkdirSync(stagingSessionDir, { recursive: true, mode: 0o750 });
 
   // Create an upload_session for this zip import
-  const sessionRes = await query(
+  const sessionRes = payload.sessionId ? await query('SELECT id FROM upload_sessions WHERE id = $1 AND endpoint_id = $2', [payload.sessionId, endpointId]) : await query(
     `INSERT INTO upload_sessions (endpoint_id, user_id, mode, status, expected_files_count, expires_at)
      VALUES ($1, $2, $3, 'processing', 0, NOW() + INTERVAL '24 hours')
      RETURNING id`,
     [endpointId, userId, mode]
   );
+  if (!sessionRes.rows.length) throw new Error('Session d’import introuvable.');
   const sessionId = sessionRes.rows[0].id;
 
   const validEntries: Array<{ cleanPath: string; isDir: boolean; sha256: string; sha1: string; size: number }> = [];
@@ -197,6 +201,8 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
   await query(
     `UPDATE upload_sessions
      SET expected_files_count = $1,
+         total_files = $1,
+         processed_files = $1,
          received_files_count = $1,
          total_bytes_expected = $2,
          total_bytes_received = $2,

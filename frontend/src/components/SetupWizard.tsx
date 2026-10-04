@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield, Globe, Box, Check, ArrowRight, ArrowLeft, X } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import { api } from '../api/client';
@@ -21,10 +21,17 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
   const [filesFqdn, setFilesFqdn] = useState('mccdn.inferi.fr');
   const [adminFqdn, setAdminFqdn] = useState('panel.mccdn.internal');
   const [newPassword, setNewPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [filesBaseUrl, setFilesBaseUrl] = useState<string | undefined>();
   const [confirmPassword, setConfirmPassword] = useState('');
   const [modpackName, setModpackName] = useState('');
   const [modpackSlug, setModpackSlug] = useState('');
 
+  useEffect(() => {
+    if (isOpen) api.get<{ adminFqdn: string; filesFqdn: string; filesBaseUrl?: string }>('/system/public-config')
+      .then(settings => { setAdminFqdn(settings.adminFqdn); setFilesFqdn(settings.filesFqdn); setFilesBaseUrl(settings.filesBaseUrl); })
+      .catch(error => toast.error(error.message));
+  }, [isOpen]);
   if (!isOpen) return null;
 
   const validatePassword = (pass: string): boolean => {
@@ -33,6 +40,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
 
   const handleNext = async () => {
     if (step === 2 && newPassword) {
+      if (!currentPassword) { toast.error('Saisissez votre mot de passe actuel.'); return; }
       if (!validatePassword(newPassword)) {
         toast.error('Le mot de passe doit comporter au moins 10 caractères, 1 majuscule, 1 minuscule et 1 chiffre.');
         return;
@@ -49,9 +57,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
     setSubmitting(true);
     let createdSlug = '';
     try {
+      await api.put('/system/public-config', { adminFqdn, filesFqdn, filesBaseUrl });
       // 1. Change password if provided
       if (newPassword) {
         await api.post('/auth/change-password', {
+          currentPassword,
           newPassword
         });
       }
@@ -156,6 +166,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
           )}
 
           {step === 2 && (
+            <>
+            <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+              Mot de passe actuel (si vous souhaitez le modifier)
+              <input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="mt-1 w-full p-2 border border-zinc-300 dark:border-zinc-700 rounded bg-transparent" />
+            </label>
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center space-x-2 text-zinc-900 dark:text-zinc-100 font-semibold text-sm">
                 <Shield className="w-4 h-4 text-emerald-500" />
@@ -196,8 +211,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
                 </div>
               </div>
             </div>
+            </>
           )}
-
           {step === 3 && (
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center space-x-2 text-zinc-900 dark:text-zinc-100 font-semibold text-sm">

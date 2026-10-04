@@ -6,16 +6,20 @@ import { JobQueue } from '../queue';
 
 export interface ProcessUploadPayload {
   uploadFileId: string;
-  tempFilePath: string;
+  tempFilePath?: string;
+  stagingPath?: string;
   sessionId: string;
   relativePath: string;
-  expectedSize: number;
+  expectedSize?: number;
 }
 
 export async function handleProcessUploadFile(payload: ProcessUploadPayload): Promise<void> {
-  const { uploadFileId, tempFilePath, sessionId, relativePath, expectedSize } = payload;
+  const { uploadFileId, sessionId, relativePath, expectedSize } = payload;
+  const tempFilePath = payload.tempFilePath || payload.stagingPath;
+  const current = await query('SELECT staging_path, status FROM upload_files WHERE id = $1', [uploadFileId]);
+  if (!current.rows.length || current.rows[0].status === 'verified' || current.rows[0].staging_path !== tempFilePath) return;
 
-  if (!fs.existsSync(tempFilePath)) {
+  if (!tempFilePath || !fs.existsSync(tempFilePath)) {
     throw new Error(`Fichier temporaire d'upload introuvable : ${tempFilePath}`);
   }
 
@@ -24,6 +28,7 @@ export async function handleProcessUploadFile(payload: ProcessUploadPayload): Pr
     throw new Error(`Chemin invalide pour l'upload : ${pathValidation.error}`);
   }
   const cleanPath = pathValidation.normalizedPath;
+  if (expectedSize !== undefined && fs.statSync(tempFilePath).size !== expectedSize) throw new Error('Taille du fichier reçu incorrecte.');
 
   // Store in CAS (computes SHA-1, SHA-256 and deduplicates)
   const casObj = await storeObjectFromPath(tempFilePath);
@@ -35,14 +40,15 @@ export async function handleProcessUploadFile(payload: ProcessUploadPayload): Pr
          sha1 = $2,
          received_size = $3,
          status = 'verified'
-     WHERE id = $4`,
-    [casObj.sha256, casObj.sha1, casObj.sizeBytes, uploadFileId]
+     WHERE id = $4 AND staging_path = $5`,
+    [casObj.sha256, casObj.sha1, casObj.sizeBytes, uploadFileId, tempFilePath]
   );
 
   // Update session progress
   const sessionRes = await query(
     `UPDATE upload_sessions
      SET received_files_count = (SELECT COUNT(*) FROM upload_files WHERE session_id = $1 AND status = 'verified'),
+         processed_files = (SELECT COUNT(*) FROM upload_files WHERE session_id = $1 AND status = 'verified'),
          total_bytes_received = (SELECT COALESCE(SUM(received_size), 0) FROM upload_files WHERE session_id = $1 AND status = 'verified'),
          updated_at = NOW()
      WHERE id = $1

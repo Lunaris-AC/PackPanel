@@ -74,9 +74,7 @@ describe('Engine: Minecraft Launcher Arguments Synthesis', () => {
       } as any
     });
 
-    expect(args.gameArgs).toContain('--server');
-    expect(args.gameArgs).toContain('play.packpanel.org');
-    expect(args.gameArgs).toContain('--port');
-    expect(args.gameArgs).toContain('25565');
+    expect(args.gameArgs).toContain('--quickPlayMultiplayer');
+    expect(args.gameArgs).toContain('play.packpanel.org:25565');
   });
 });

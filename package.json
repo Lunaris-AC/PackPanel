@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build:protocol": "npm run build --workspace=@packpanel/protocol",
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspace=@packpanel/protocol && npm run build --workspace=@packpanel/engine && npm run build --workspace=@packpanel/templates && npm run build --workspace=@packpanel/sdk && npm run build --workspace=@packpanel/launcher && npm run build --workspace=packpanel-backend && npm run build --workspace=packpanel-frontend",
     "test": "npm run test --workspaces"
   },
   "dependencies": {
@@ -20,6 +20,7 @@
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
-    "electron": "^44.4.5"
+    "electron": "^44.5.1",
+    "playwright": "^1.63.0"
   }
 }

@@ -4,10 +4,10 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, requireRole, recordAuditLog } from '../../auth/middleware';
-import { config, ENDPOINTS_DIR, STAGING_DIR } from '../../config';
+import { authenticateRequest, requireRole, requireInstancePermission, recordAuditLog } from '../../auth/middleware';
+import { config, ENDPOINTS_DIR, STAGING_DIR, getFilesBaseUrl } from '../../config';
 import { validateCombination, resolveJavaRequirement, LoaderType } from '../../catalog';
-import { handleSealAndBuildRelease } from '../../jobs/handlers/publish';
+import { handleSealAndBuildRelease, handlePublishRelease } from '../../jobs/handlers/publish';
 import { buildLauncherArtifact } from '../../build/launcher-builder';
 import { storeBufferInCas, getCasObjectPath } from '../../storage/cas';
 import { hashBuffer } from '../../storage/hasher';
@@ -31,7 +31,12 @@ const InstanceCreateSchema = z.object({
   endpointId: z.string().uuid().optional()
 });
 
-const InstanceUpdateSchema = InstanceCreateSchema.partial();
+const InstanceUpdateSchema = InstanceCreateSchema.partial().extend({
+  loaderVersion: z.string().max(64).nullable().optional(),
+  serverAddress: z.string().max(255).nullable().optional(),
+  serverName: z.string().max(128).nullable().optional(),
+  iconUrl: z.string().url().nullable().optional()
+});
 
 const LauncherSettingsSchema = z.object({
   title: z.string().min(1).max(128).optional(),
@@ -75,6 +80,8 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 
     return reply
       .header('Content-Type', mime)
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('Content-Security-Policy', "sandbox; default-src 'none'")
       .header('Cache-Control', 'public, max-age=31536000, immutable')
       .send(buf);
   });
@@ -82,6 +89,11 @@ export async function instanceRoutes(fastify: FastifyInstance) {
   // Authenticated routes
   fastify.register(async (authed) => {
     authed.addHook('preHandler', authenticateRequest);
+    authed.addHook('preHandler', async (req, reply) => {
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        await requireInstancePermission(req.routeOptions.url?.endsWith('/publish') ? 'can_publish' : 'can_write')(req, reply);
+      }
+    });
 
     // 1. List all instances
     authed.get('/instances', async (req, reply) => {
@@ -103,7 +115,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 
       const instances = res.rows.map(inst => ({
         ...inst,
-        manifest_url: inst.endpoint_slug ? `https://${config.FILES_FQDN}/${inst.endpoint_slug}/packpanel.json` : null
+        manifest_url: inst.endpoint_slug ? `${getFilesBaseUrl()}/${inst.endpoint_slug}/packpanel.json` : null
       }));
 
       return reply.send({ instances });
@@ -191,7 +203,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       return reply.send({
         instance: {
           ...inst,
-          manifest_url: inst.endpoint_slug ? `https://${config.FILES_FQDN}/${inst.endpoint_slug}/packpanel.json` : null,
+          manifest_url: inst.endpoint_slug ? `${getFilesBaseUrl()}/${inst.endpoint_slug}/packpanel.json` : null,
           activeRelease,
           pendingChangesCount,
           hasDraftConfigChanges,
@@ -224,6 +236,9 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 
       const resolvedLoaderVersion = validation.resolvedLoaderVersion || null;
       const resolvedJavaVersion = data.javaVersion || validation.javaRequirement.majorVersion;
+      if (resolvedJavaVersion < validation.javaRequirement.majorVersion) {
+        return reply.status(400).send({ error: `Cette combinaison nécessite Java ${validation.javaRequirement.majorVersion} minimum.` });
+      }
       const resolvedJavaArgs = data.javaArgs || validation.javaRequirement.jvmArgs.join(' ');
 
       // Check slug uniqueness
@@ -246,9 +261,14 @@ export async function instanceRoutes(fastify: FastifyInstance) {
             [data.slug, data.name, data.description || '']
           );
           targetEndpointId = newEp.rows[0].id;
+          if (req.user!.role !== 'admin') await query('INSERT INTO user_endpoint_permissions (user_id, endpoint_id, can_write, can_publish) VALUES ($1, $2, TRUE, TRUE)', [req.user!.userId, targetEndpointId]);
         }
       }
 
+      if (req.user!.role !== 'admin') {
+        const rights = await query('SELECT can_write FROM user_endpoint_permissions WHERE user_id = $1 AND endpoint_id = $2', [req.user!.userId, targetEndpointId]);
+        if (!rights.rows[0]?.can_write) return reply.status(403).send({ error: 'Association à cet endpoint non autorisée' });
+      }
       const res = await query(
         `INSERT INTO instances (
           name, slug, description, icon_url,
@@ -301,16 +321,28 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 
       const current = existing.rows[0];
       const targetId = current.id;
+      if (data.endpointId && req.user!.role !== 'admin') {
+        const rights = await query('SELECT can_write FROM user_endpoint_permissions WHERE user_id = $1 AND endpoint_id = $2', [req.user!.userId, data.endpointId]);
+        if (!rights.rows[0]?.can_write) return reply.status(403).send({ error: 'Association à cet endpoint non autorisée' });
+      }
 
       // Validate combination if changing MC version or loader
       const mcVer = data.minecraftVersion || current.minecraft_version;
       const loader = (data.loaderType || current.loader_type) as LoaderType;
-      const loaderVer = data.loaderVersion !== undefined ? data.loaderVersion : current.loader_version;
+      const combinationChanged = data.minecraftVersion !== undefined || data.loaderType !== undefined || data.loaderVersion !== undefined;
+      let loaderVer = data.loaderVersion !== undefined ? data.loaderVersion
+        : (data.minecraftVersion !== undefined || data.loaderType !== undefined) ? undefined : current.loader_version;
+      let javaVer = data.javaVersion ?? current.java_version;
 
-      if (data.minecraftVersion || data.loaderType || data.loaderVersion) {
+      if (combinationChanged || data.javaVersion !== undefined) {
         const validation = await validateCombination(mcVer, loader, loaderVer || undefined);
         if (!validation.valid) {
           return reply.status(400).send({ error: validation.error || 'Combinaison Minecraft / loader invalide' });
+        }
+        loaderVer = validation.resolvedLoaderVersion || null;
+        javaVer = data.javaVersion ?? validation.javaRequirement.majorVersion;
+        if (javaVer < validation.javaRequirement.majorVersion) {
+          return reply.status(400).send({ error: `Cette combinaison nécessite Java ${validation.javaRequirement.majorVersion} minimum.` });
         }
       }
 
@@ -318,14 +350,14 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         `UPDATE instances
          SET name = COALESCE($1, name),
              description = COALESCE($2, description),
-             icon_url = COALESCE($3, icon_url),
+             icon_url = CASE WHEN $14 THEN $3 ELSE icon_url END,
              minecraft_version = COALESCE($4, minecraft_version),
              loader_type = COALESCE($5, loader_type),
-             loader_version = COALESCE($6, loader_version),
-             java_version = COALESCE($7, java_version),
+             loader_version = $6,
+             java_version = $7,
              java_args = COALESCE($8, java_args),
-             server_address = COALESCE($9, server_address),
-             server_name = COALESCE($10, server_name),
+             server_address = CASE WHEN $15 THEN $9 ELSE server_address END,
+             server_name = CASE WHEN $16 THEN $10 ELSE server_name END,
              file_policies = COALESCE($11, file_policies),
              endpoint_id = COALESCE($12, endpoint_id),
              updated_at = NOW()
@@ -337,14 +369,17 @@ export async function instanceRoutes(fastify: FastifyInstance) {
           data.iconUrl ?? null,
           data.minecraftVersion ?? null,
           data.loaderType ?? null,
-          data.loaderVersion ?? null,
-          data.javaVersion ?? null,
+          loaderVer ?? null,
+          javaVer,
           data.javaArgs ?? null,
           data.serverAddress ?? null,
           data.serverName ?? null,
           data.filePolicies ? JSON.stringify(data.filePolicies) : null,
           data.endpointId ?? null,
-          targetId
+          targetId,
+          data.iconUrl !== undefined,
+          data.serverAddress !== undefined,
+          data.serverName !== undefined
         ]
       );
 
@@ -383,16 +418,38 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 
       // Check if there are uncommitted upload sessions, or publish existing/empty release
       const sessRes = await query(
-        `SELECT id FROM upload_sessions
-         WHERE endpoint_id = $1 AND status IN ('open', 'uploading', 'sealed')
-         ORDER BY created_at DESC LIMIT 1`,
+        `SELECT s.id FROM upload_sessions s
+         WHERE endpoint_id = $1 AND status IN ('open', 'uploading', 'sealed', 'processing')
+           AND (EXISTS (SELECT 1 FROM upload_files f WHERE f.session_id = s.id) OR source_type = 'zip')
+         ORDER BY created_at ASC`,
         [inst.endpoint_id]
       );
 
       let sessionId: string;
       if (sessRes.rows.length > 0) {
-        sessionId = sessRes.rows[0].id;
+        const pending = await query(`SELECT COUNT(*) FROM jobs WHERE status IN ('pending','running') AND payload->>'sessionId' = ANY($1::text[])`, [sessRes.rows.map(s => s.id)]);
+        if (Number(pending.rows[0].count) > 0) return reply.status(409).send({ error: 'Le traitement des fichiers est encore en cours. Réessayez après sa fin.' });
+        const invalid = await query(`SELECT COUNT(*) FROM upload_sessions s WHERE id = ANY($1::uuid[]) AND (
+          received_files_count < expected_files_count OR EXISTS (SELECT 1 FROM upload_files f WHERE f.session_id = s.id AND f.status <> 'verified'))`, [sessRes.rows.map(s => s.id)]);
+        if (Number(invalid.rows[0].count) > 0) return reply.status(409).send({ error: 'Des uploads sont incomplets ou en erreur.' });
+        let latestReleaseId = '';
+        for (const session of sessRes.rows) {
+          latestReleaseId = (await handleSealAndBuildRelease({ sessionId: session.id, immediatePublish: false })).createdReleaseId;
+        }
+        await handlePublishRelease({ releaseId: latestReleaseId, endpointId: inst.endpoint_id });
+        await recordAuditLog(req.user!.userId, 'publish', 'instance', inst.id, { slug: inst.slug }, req.ip);
+        return reply.send({ success: true, message: 'Instance publiée avec succès.' });
       } else {
+        const drafts = await query(`SELECT id FROM releases WHERE endpoint_id = $1 AND status = 'draft'
+          AND version_num > COALESCE((SELECT MAX(version_num) FROM releases WHERE endpoint_id = $1 AND is_active = TRUE), 0)
+          ORDER BY version_num DESC LIMIT 1`, [inst.endpoint_id]);
+        if (drafts.rows.length > 0) {
+          const { minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies } = inst;
+          await query('UPDATE releases SET game_config = $1 WHERE id = $2', [JSON.stringify({ minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies }), drafts.rows[0].id]);
+          await handlePublishRelease({ releaseId: drafts.rows[0].id, endpointId: inst.endpoint_id });
+          await recordAuditLog(req.user!.userId, 'publish', 'instance', inst.id, { slug: inst.slug }, req.ip);
+          return reply.send({ success: true, message: 'Instance publiée avec succès.' });
+        }
         // Create an empty sync session (valid for Vanilla or config updates)
         const newSess = await query(
           `INSERT INTO upload_sessions (endpoint_id, user_id, mode, source_type, status, total_files, processed_files, failed_files)
@@ -562,7 +619,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       const { sha1, sha256 } = hashBuffer(buf);
       await storeBufferInCas(buf, sha256, sha1);
 
-      const mediaUrl = `https://${config.FILES_FQDN || 'mccdn.inferi.fr'}/api/v2/media/${sha256}`;
+      const mediaUrl = `https://${config.ADMIN_FQDN}/api/v2/media/${sha256}`;
       return reply.send({ url: mediaUrl, sha256 });
     });
 
@@ -572,8 +629,9 @@ export async function instanceRoutes(fastify: FastifyInstance) {
     }, async (req, reply) => {
       const { id } = req.params as { id: string };
       const { targetOs = 'windows' } = (req.body || {}) as { targetOs?: 'windows' | 'linux' | 'macos' | 'all' };
+      if (!['windows', 'linux', 'macos', 'all'].includes(targetOs)) return reply.status(400).send({ error: 'Plateforme invalide' });
 
-      const instRes = await query('SELECT launcher_project_id, slug FROM instances WHERE id::text = $1 OR slug = $1', [id]);
+      const instRes = await query('SELECT id, launcher_project_id, slug FROM instances WHERE id::text = $1 OR slug = $1', [id]);
       if (instRes.rows.length === 0 || !instRes.rows[0].launcher_project_id) {
         return reply.status(400).send({ error: "Aucun launcher n'est configuré pour cette instance" });
       }
@@ -581,6 +639,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       const launcherProjectId = instRes.rows[0].launcher_project_id;
       const buildResult = await buildLauncherArtifact({
         launcherProjectId,
+        instanceId: instRes.rows[0].id,
         targetOs,
         userId: req.user!.userId
       });
@@ -615,8 +674,8 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 
     // 13. Download Built Artifact
     authed.get('/instances/:id/launcher/builds/:buildId/download', async (req, reply) => {
-      const { buildId } = req.params as { buildId: string };
-      const buildRes = await query('SELECT * FROM launcher_builds WHERE id = $1', [buildId]);
+      const { id, buildId } = req.params as { id: string; buildId: string };
+      const buildRes = await query(`SELECT b.* FROM launcher_builds b JOIN instances i ON i.launcher_project_id = b.launcher_project_id WHERE b.id = $1 AND (i.id::text = $2 OR i.slug = $2)`, [buildId, id]);
       if (buildRes.rows.length === 0) {
         return reply.status(404).send({ error: 'Build introuvable' });
       }
@@ -651,8 +710,8 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 /**
  * Generates and serializes the complete V2 manifest (packpanel.json)
  */
-export async function buildInstanceManifestV2(instanceId: string): Promise<any | null> {
-  const instRes = await query(`
+export async function buildInstanceManifestV2(instanceId: string, dbQuery: typeof query = query): Promise<any | null> {
+  const instRes = await dbQuery(`
     SELECT i.*, e.slug as endpoint_slug
     FROM instances i
     LEFT JOIN endpoints e ON e.id = i.endpoint_id
@@ -664,7 +723,7 @@ export async function buildInstanceManifestV2(instanceId: string): Promise<any |
 
   if (!inst.endpoint_id) return null;
 
-  const relRes = await query(`
+  const relRes = await dbQuery(`
     SELECT r.id, r.release_id, r.version_num, r.published_at, r.game_config
     FROM releases r
     WHERE r.endpoint_id = $1 AND r.is_active = TRUE
@@ -688,27 +747,28 @@ export async function buildInstanceManifestV2(instanceId: string): Promise<any |
         file_policies: inst.file_policies
       };
 
-  const filesRes = await query(`
+  const filesRes = await dbQuery(`
     SELECT relative_path, sha1, sha256, size_bytes, is_dir
     FROM release_files
     WHERE release_id = $1 AND is_dir = FALSE
     ORDER BY relative_path ASC
   `, [rel.id]);
 
-  const baseUrl = `https://${config.FILES_FQDN}/${inst.endpoint_slug}/releases/${rel.release_id}`;
+  const baseUrl = `${getFilesBaseUrl()}/${inst.endpoint_slug}/releases/${rel.release_id}`;
 
   const files = filesRes.rows.map(f => ({
     path: f.relative_path,
     sha1: f.sha1,
     sha256: f.sha256,
     size: Number(f.size_bytes),
-    url: `${baseUrl}/${encodeURI(f.relative_path)}`,
+    url: `${baseUrl}/${f.relative_path.split('/').map(encodeURIComponent).join('/')}`,
     policy: 'required'
   }));
 
   const filePolicies = typeof gc.file_policies === 'string'
     ? JSON.parse(gc.file_policies)
     : (gc.file_policies || {});
+  for (const file of files) if (filePolicies.optional_mods?.includes(file.path)) file.policy = 'optional';
 
   const manifest = {
     formatVersion: 2,
@@ -748,15 +808,24 @@ export async function buildInstanceManifestV2(instanceId: string): Promise<any |
 /**
  * Writes the packpanel.json manifest statically to the endpoint directory for fast Nginx serving
  */
-export async function writeV2ManifestToEndpoint(instanceId: string): Promise<void> {
-  const instRes = await query('SELECT slug, endpoint_id FROM instances WHERE id::text = $1 OR slug = $1', [instanceId]);
+export async function writeV2ManifestToEndpoint(instanceId: string, dbQuery?: typeof query): Promise<void> {
+  if (!dbQuery) {
+    await withTransaction(async client => {
+      const endpoint = await client.query('SELECT endpoint_id FROM instances WHERE id::text = $1 OR slug = $1', [instanceId]);
+      if (!endpoint.rows[0]?.endpoint_id) return;
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || $1::text))`, [endpoint.rows[0].endpoint_id]);
+      await writeV2ManifestToEndpoint(instanceId, client.query.bind(client) as typeof query);
+    });
+    return;
+  }
+  const instRes = await dbQuery('SELECT slug, endpoint_id FROM instances WHERE id::text = $1 OR slug = $1', [instanceId]);
   if (instRes.rows.length === 0 || !instRes.rows[0].endpoint_id) return;
 
-  const epRes = await query('SELECT slug FROM endpoints WHERE id = $1', [instRes.rows[0].endpoint_id]);
+  const epRes = await dbQuery('SELECT slug FROM endpoints WHERE id = $1', [instRes.rows[0].endpoint_id]);
   if (epRes.rows.length === 0) return;
 
   const epSlug = epRes.rows[0].slug;
-  const manifest = await buildInstanceManifestV2(instanceId);
+  const manifest = await buildInstanceManifestV2(instanceId, dbQuery);
   if (!manifest) return;
 
   const endpointDir = path.join(ENDPOINTS_DIR, epSlug);
@@ -765,7 +834,7 @@ export async function writeV2ManifestToEndpoint(instanceId: string): Promise<voi
   }
 
   const targetPath = path.join(endpointDir, 'packpanel.json');
-  const tempPath = path.join(endpointDir, `packpanel.json.tmp.${process.pid}.${Date.now()}`);
+  const tempPath = path.join(endpointDir, `packpanel.json.tmp.${process.pid}.${crypto.randomUUID()}`);
 
   fs.writeFileSync(tempPath, JSON.stringify(manifest, null, 2), 'utf8');
   fs.renameSync(tempPath, targetPath);

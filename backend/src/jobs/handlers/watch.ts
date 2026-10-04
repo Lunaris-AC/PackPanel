@@ -10,6 +10,9 @@ const CONTROL_FILES = new Set(['.ready', '.seal', '.git', '.DS_Store', 'Thumbs.d
 
 export async function handleScanIncomingFolder(payload: { endpointId: string; slug: string }): Promise<void> {
   const { endpointId, slug } = payload;
+  const endpointDir = path.join(ENDPOINTS_DIR, slug);
+  fs.mkdirSync(endpointDir, { recursive: true, mode: 0o755 });
+  fs.chmodSync(endpointDir, 0o755);
   const incomingDir = path.join(ENDPOINTS_DIR, slug, 'incoming');
 
   if (!fs.existsSync(incomingDir)) {
@@ -107,8 +110,8 @@ async function processSealedBatch(
     const casObj = await storeObjectFromPath(tempCopy);
 
     await query(
-      `INSERT INTO upload_files (session_id, relative_path, expected_size, received_size, sha256, sha1, status)
-       VALUES ($1, $2, $3, $3, $4, $5, 'verified')
+      `INSERT INTO upload_files (session_id, relative_path, size_bytes, expected_size, received_size, sha256, sha1, status)
+       VALUES ($1, $2, $3, $3, $3, $4, $5, 'verified')
        ON CONFLICT (session_id, relative_path) DO NOTHING`,
       [sessionId, f.relPath, f.size, casObj.sha256, casObj.sha1]
     );
@@ -119,6 +122,8 @@ async function processSealedBatch(
   await query(
     `UPDATE upload_sessions
      SET expected_files_count = $1,
+         total_files = $1,
+         processed_files = $1,
          received_files_count = $1,
          total_bytes_expected = $2,
          total_bytes_received = $2,

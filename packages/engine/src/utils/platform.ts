@@ -1,4 +1,6 @@
 import os from 'os';
+import path from 'path';
+import fs from 'fs';
 
 export type MojangOsName = 'windows' | 'osx' | 'linux';
 
@@ -45,11 +47,12 @@ export function evaluateRules(rules?: MojangRule[], activeFeatures?: Record<stri
       if (rule.os.arch && rule.os.arch !== currentArch) {
         matches = false;
       }
+      if (rule.os.version && !new RegExp(rule.os.version).test(os.release())) matches = false;
     }
 
-    if (rule.features && activeFeatures) {
+    if (rule.features) {
       for (const [feat, expected] of Object.entries(rule.features)) {
-        if (Boolean(activeFeatures[feat]) !== expected) {
+        if (Boolean(activeFeatures?.[feat]) !== expected) {
           matches = false;
           break;
         }
@@ -66,11 +69,30 @@ export function evaluateRules(rules?: MojangRule[], activeFeatures?: Record<stri
 
 export function mavenToPath(coord: string, extension: string = 'jar'): string {
   // e.g. "org.ow2.asm:asm:9.5" or "org.lwjgl:lwjgl-jemalloc:3.3.2:natives-windows"
-  const parts = coord.split(':');
+  const [coordinate, ext] = coord.split('@');
+  if (ext) extension = ext;
+  const parts = coordinate.split(':');
+  if (parts.length < 3 || parts.some(part => !/^[a-zA-Z0-9_.+-]+$/.test(part)) || !/^[a-zA-Z0-9]+$/.test(extension)) throw new Error(`Coordonnées Maven invalides: ${coord}`);
   const group = parts[0].replace(/\./g, '/');
   const artifact = parts[1];
   const version = parts[2];
   const classifier = parts[3] ? `-${parts[3]}` : '';
 
   return `${group}/${artifact}/${version}/${artifact}-${version}${classifier}.${extension}`;
+}
+
+export function resolveSafePath(root: string, relative: string): string {
+  const normalized = relative.replace(/\\/g, '/');
+  if (!normalized || path.isAbsolute(relative) || /^[a-z]:/i.test(normalized) || normalized.split('/').some(p => p === '..' || p === '.') || /[\x00-\x1f]/.test(normalized)) {
+    throw new Error(`Chemin invalide: ${relative}`);
+  }
+  const base = path.resolve(root);
+  const target = path.resolve(base, normalized);
+  if (!target.startsWith(base + path.sep)) throw new Error(`Chemin hors de l’instance: ${relative}`);
+  let current = base;
+  for (const part of normalized.split('/').filter(Boolean)) {
+    current = path.join(current, part);
+    if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw new Error(`Lien symbolique interdit: ${relative}`);
+  }
+  return target;
 }

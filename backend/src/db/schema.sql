@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS launcher_projects (
     background_url TEXT,
     logo_url TEXT,
     icon_url TEXT,
-    auth_microsoft BOOLEAN NOT NULL DEFAULT TRUE,
+    auth_microsoft BOOLEAN NOT NULL DEFAULT FALSE,
     auth_offline BOOLEAN NOT NULL DEFAULT TRUE,
     discord_url TEXT,
     website_url TEXT,
@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS launcher_projects (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_launcher_projects_slug ON launcher_projects(slug);
+ALTER TABLE launcher_projects ALTER COLUMN auth_microsoft SET DEFAULT FALSE;
 
 -- Launcher Project Instance Associations
 CREATE TABLE IF NOT EXISTS launcher_project_instances (

@@ -43,6 +43,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
   const [availableLoaders, setAvailableLoaders] = useState<LoaderCompatibilitySummary[]>([]);
   const [loaderVersions, setLoaderVersions] = useState<LoaderVersionEntry[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
 
   // Load MC versions on mount
   useEffect(() => {
@@ -79,19 +80,27 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
   useEffect(() => {
     if (!minecraftVersion || !loaderType) return;
     let active = true;
+    setLoadingCatalog(true);
+    setCatalogError('');
+    setLoaderVersions([]);
 
     async function loadDetails() {
       try {
+        const requirements = await catalogApi.getRequirements(minecraftVersion, loaderType);
+        if (!active) return;
+        setJavaVersion(requirements.requirements.majorVersion);
         if (loaderType !== 'vanilla') {
-          setLoadingCatalog(true);
           const res = await catalogApi.getLoaderVersions(loaderType, minecraftVersion);
           if (!active) return;
           setLoaderVersions(res.versions || []);
+          setLoaderVersion(current => res.versions.some(v => v.version === current)
+            ? current : ((res.versions.find(v => v.isRecommended) || res.versions[0])?.version || ''));
         } else {
           setLoaderVersions([]);
+          setLoaderVersion('');
         }
-      } catch (e) {
-        console.error('Failed to load loader versions', e);
+      } catch (e: any) {
+        if (active) setCatalogError(e.message || 'Impossible de charger le catalogue.');
       } finally {
         if (active) setLoadingCatalog(false);
       }
@@ -228,7 +237,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
               className="w-full px-3 py-2 text-xs font-mono bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100"
             >
               {mcVersions.length > 0 ? (
-                mcVersions.slice(0, 40).map(v => (
+                mcVersions.filter((v, index) => index < 40 || v.id === minecraftVersion).map(v => (
                   <option key={v.id} value={v.id}>
                     {v.id} {v.type === 'snapshot' ? '(Snapshot)' : ''}
                   </option>
@@ -248,10 +257,10 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
               onChange={e => setLoaderType(e.target.value as LoaderType)}
               className="w-full px-3 py-2 text-xs bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-zinc-900 dark:text-zinc-100 capitalize"
             >
-              <option value="fabric">Fabric</option>
-              <option value="neoforge">NeoForge</option>
-              <option value="forge">Forge</option>
-              <option value="quilt">Quilt</option>
+              <option value="fabric" disabled={!availableLoaders.some(l => l.loader === 'fabric' && l.available)}>Fabric</option>
+              <option value="neoforge" disabled={!availableLoaders.some(l => l.loader === 'neoforge' && l.available)}>NeoForge</option>
+              <option value="forge" disabled={!availableLoaders.some(l => l.loader === 'forge' && l.available)}>Forge</option>
+              <option value="quilt" disabled={!availableLoaders.some(l => l.loader === 'quilt' && l.available)}>Quilt</option>
               <option value="vanilla">Vanilla</option>
             </select>
           </div>
@@ -275,7 +284,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
               >
                 {loaderVersions.map((lv, idx) => (
                   <option key={lv.version} value={lv.version}>
-                    {lv.version} {idx === 0 ? '(Recommandée)' : ''}
+                    {lv.version} {lv.isRecommended ? '(Recommandée)' : ''}
                   </option>
                 ))}
                 {loaderVersion && !loaderVersions.some(lv => lv.version === loaderVersion) && (
@@ -301,6 +310,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
               <option value={16}>Java 16 (1.17)</option>
               <option value={17}>Java 17 (1.18 à 1.20.4)</option>
               <option value={21}>Java 21 (1.20.5+ et NeoForge)</option>
+              <option value={25}>Java 25 (26.1+)</option>
             </select>
           </div>
 
@@ -330,10 +340,11 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
           </div>
         </div>
 
+        {catalogError && <p role="alert" className="text-xs text-rose-600">{catalogError}</p>}
         <div className="flex justify-end pt-4 border-t border-zinc-100 dark:border-zinc-800">
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || loadingCatalog || !!catalogError || (loaderType !== 'vanilla' && !loaderVersion)}
             className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-semibold text-xs rounded-xl shadow-xs transition flex items-center gap-2 disabled:opacity-60"
           >
             <Save className="w-4 h-4" />

@@ -7,17 +7,20 @@ import { handleExtractZipImport } from './jobs/handlers/zip';
 import { handleGarbageCollection } from './jobs/handlers/gc';
 import { handleScanIncomingFolder } from './jobs/handlers/watch';
 import { query } from './db';
-import { OBJECTS_DIR, UPLOADS_DIR, ENDPOINTS_DIR, BACKUPS_DIR } from './config';
+import { OBJECTS_DIR, UPLOADS_DIR, ENDPOINTS_DIR, BACKUPS_DIR, reloadPublicConfiguration } from './config';
 
 const workerId = `worker_${os.hostname()}_${process.pid}`;
 let isRunning = true;
 
 // Ensure directories exist
-for (const dir of [OBJECTS_DIR, UPLOADS_DIR, ENDPOINTS_DIR, BACKUPS_DIR]) {
+for (const dir of [OBJECTS_DIR, UPLOADS_DIR, BACKUPS_DIR]) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o750 });
   }
 }
+// Nginx serves only this public subtree; private objects/uploads remain restricted.
+fs.mkdirSync(ENDPOINTS_DIR, { recursive: true, mode: 0o755 });
+fs.chmodSync(ENDPOINTS_DIR, 0o755);
 
 async function startWorker() {
   console.log(`[Worker] Started ${workerId}`);
@@ -36,6 +39,7 @@ async function startWorker() {
 
       // 2. Periodic incoming folder check every 30 seconds
       if (Date.now() - lastWatchScan > 30 * 1000) {
+        reloadPublicConfiguration();
         lastWatchScan = Date.now();
         const activeEndpoints = await query(`SELECT id, slug FROM endpoints WHERE is_active = TRUE`);
         for (const ep of activeEndpoints.rows) {
@@ -83,7 +87,7 @@ async function startWorker() {
             await handleScanIncomingFolder(job.payload);
             break;
           default:
-            console.warn(`[Worker] Unknown job type: ${job.type}`);
+            throw new Error(`Unknown job type: ${job.type}`);
         }
 
         clearInterval(heartbeatTimer);

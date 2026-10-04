@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { query, withTransaction } from '../../db';
-import { config, ENDPOINTS_DIR } from '../../config';
+import { config, ENDPOINTS_DIR, getFilesBaseUrl } from '../../config';
 import { linkObjectToRelease } from '../../storage/cas';
 import { buildMineLaunchedManifest, validateMineLaunchedContract, FileRecordInput } from '../../storage/manifest';
 import { writeV2ManifestToEndpoint } from '../../api/routes/instances';
@@ -41,10 +41,15 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
   }
 
   const session = sessionRes.rows[0];
+  if (session.expected_files_count > 0 && session.received_files_count < session.expected_files_count) {
+    throw new Error('Session incomplète : tous les fichiers attendus doivent être reçus.');
+  }
   const endpointId = session.endpoint_id;
   const endpointSlug = session.endpoint_slug;
   const cleanupRules: string[] = session.cleanup_rules || ['mods'];
   const shouldAutoPublish: boolean = Boolean(session.auto_publish);
+  const incompleteFiles = await query(`SELECT COUNT(*) FROM upload_files WHERE session_id = $1 AND status <> 'verified'`, [sessionId]);
+  if (Number(incompleteFiles.rows[0].count) > 0) throw new Error('Des fichiers sont encore en cours de traitement ou en erreur. Publication annulée.');
 
   // Check if session has failed files
   const failedFiles = await query(
@@ -62,7 +67,9 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
 
     // Get active release for base merging if in add_replace mode
     const activeReleaseRes = await client.query(
-      `SELECT id, release_id, version_num FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1`,
+      `SELECT id, release_id, version_num FROM releases
+       WHERE endpoint_id = $1 AND (is_active = TRUE OR status = 'draft')
+       ORDER BY version_num DESC LIMIT 1`,
       [endpointId]
     );
     const activeRelease = activeReleaseRes.rows[0] || null;
@@ -140,7 +147,7 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
       manifestInput,
       endpointSlug,
       relIdStr,
-      config.FILES_FQDN,
+      getFilesBaseUrl(),
       cleanupRules
     );
 
@@ -204,7 +211,7 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
     };
   });
 
-  const shouldPublish = Boolean(immediatePublish || shouldAutoPublish);
+  const shouldPublish = immediatePublish ?? shouldAutoPublish;
   if (shouldPublish) {
     await publishReleaseInternal(endpointId, createdReleaseId, endpointSlug, manifestJson, releaseDir);
   }
@@ -264,6 +271,8 @@ export async function publishReleaseInternal(
   releaseDir: string
 ): Promise<void> {
   const endpointDir = path.join(ENDPOINTS_DIR, endpointSlug);
+  fs.mkdirSync(endpointDir, { recursive: true, mode: 0o755 });
+  fs.chmodSync(endpointDir, 0o755);
   if (!fs.existsSync(endpointDir)) {
     fs.mkdirSync(endpointDir, { recursive: true, mode: 0o755 });
   }
@@ -272,6 +281,8 @@ export async function publishReleaseInternal(
   const tempManifestPath = path.join(endpointDir, `index.php.tmp.${process.pid}.${Date.now()}.${nonce}`);
   const activeManifestPath = path.join(endpointDir, 'index.php');
 
+  await withTransaction(async (client) => {
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || $1::text))`, [endpointId]);
   // 1. Write active manifest atomically: index.php.tmp.<pid>.<time>.<nonce> -> index.php
   const fd = fs.openSync(tempManifestPath, 'w');
   try {
@@ -295,9 +306,6 @@ export async function publishReleaseInternal(
   }
 
   // 3. Update database transactions with advisory lock
-  await withTransaction(async (client) => {
-    await client.query(`SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || $1::text))`, [endpointId]);
-
     // Deactivate previous active releases for this endpoint
     await client.query(
       `UPDATE releases SET is_active = FALSE WHERE endpoint_id = $1 AND is_active = TRUE`,
@@ -313,15 +321,7 @@ export async function publishReleaseInternal(
        WHERE id = $1`,
       [releaseDbId]
     );
+    const instRes = await client.query('SELECT id FROM instances WHERE endpoint_id = $1', [endpointId]);
+    for (const inst of instRes.rows) await writeV2ManifestToEndpoint(inst.id, client.query.bind(client) as typeof query);
   });
-
-  // 4. Update V2 manifest packpanel.json if an instance is linked to this endpoint
-  try {
-    const instRes = await query('SELECT id FROM instances WHERE endpoint_id = $1', [endpointId]);
-    for (const inst of instRes.rows) {
-      await writeV2ManifestToEndpoint(inst.id);
-    }
-  } catch (err) {
-    // Non-blocking for endpoints without instances
-  }
 }

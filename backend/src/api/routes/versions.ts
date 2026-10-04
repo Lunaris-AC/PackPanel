@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import path from 'path';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, requireRole, recordAuditLog } from '../../auth/middleware';
+import { authenticateRequest, requireRole, requireEndpointPermission, recordAuditLog } from '../../auth/middleware';
 import { config, ENDPOINTS_DIR } from '../../config';
 import { publishReleaseInternal } from '../../jobs/handlers/publish';
 
@@ -40,7 +40,7 @@ export async function versionRoutes(fastify: FastifyInstance) {
       `SELECT r.*, u.username as created_by_username
        FROM releases r
        LEFT JOIN users u ON u.id = r.created_by_user_id
-       WHERE r.endpoint_id = $1 AND (r.id = $2 OR r.release_id = $2)`,
+       WHERE r.endpoint_id = $1 AND (r.id::text = $2 OR r.release_id = $2)`,
       [endpointId, versionId]
     );
 
@@ -59,14 +59,14 @@ export async function versionRoutes(fastify: FastifyInstance) {
 
   // Toggle version pin
   fastify.post('/endpoints/:id/versions/:versionId/pin', {
-    preHandler: [requireRole(['admin', 'operator'])]
+    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')]
   }, async (req, reply) => {
     const { id: endpointId, versionId } = req.params as { id: string; versionId: string };
 
     const res = await query(
       `UPDATE releases
        SET is_pinned = NOT is_pinned
-       WHERE endpoint_id = $1 AND (id = $2 OR release_id = $2)
+       WHERE endpoint_id = $1 AND (id::text = $2 OR release_id = $2)
        RETURNING id, release_id, is_pinned`,
       [endpointId, versionId]
     );
@@ -86,7 +86,7 @@ export async function versionRoutes(fastify: FastifyInstance) {
 
   // Atomic Rollback to a specific version
   fastify.post('/endpoints/:id/versions/:versionId/rollback', {
-    preHandler: [requireRole(['admin', 'operator'])]
+    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')]
   }, async (req, reply) => {
     const { id: endpointId, versionId } = req.params as { id: string; versionId: string };
 
@@ -97,7 +97,7 @@ export async function versionRoutes(fastify: FastifyInstance) {
     const endpointSlug = epRes.rows[0].slug;
 
     const relRes = await query(
-      'SELECT * FROM releases WHERE endpoint_id = $1 AND (id = $2 OR release_id = $2)',
+      'SELECT * FROM releases WHERE endpoint_id = $1 AND (id::text = $2 OR release_id = $2)',
       [endpointId, versionId]
     );
 
@@ -125,11 +125,11 @@ export async function versionRoutes(fastify: FastifyInstance) {
           `UPDATE instances
            SET minecraft_version = COALESCE($1, minecraft_version),
                loader_type = COALESCE($2, loader_type),
-               loader_version = COALESCE($3, loader_version),
+               loader_version = $3,
                java_version = COALESCE($4, java_version),
                java_args = COALESCE($5, java_args),
-               server_address = COALESCE($6, server_address),
-               server_name = COALESCE($7, server_name),
+               server_address = $6,
+               server_name = $7,
                file_policies = COALESCE($8, file_policies),
                updated_at = NOW()
            WHERE endpoint_id = $9`,
@@ -171,7 +171,7 @@ export async function versionRoutes(fastify: FastifyInstance) {
 
     const getFiles = async (relIdOrCode: string) => {
       const rel = await query(
-        'SELECT id, release_id, version_num FROM releases WHERE endpoint_id = $1 AND (id = $2 OR release_id = $2)',
+        'SELECT id, release_id, version_num FROM releases WHERE endpoint_id = $1 AND (id::text = $2 OR release_id = $2)',
         [endpointId, relIdOrCode]
       );
       if (rel.rows.length === 0) return null;
