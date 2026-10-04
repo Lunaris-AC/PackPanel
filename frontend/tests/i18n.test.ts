@@ -63,6 +63,10 @@ describe('Complete French and English panel translations', () => {
       .toBe('Insufficient permissions on this instance');
     expect(translateApiMessage('Unexpected upstream response: EPIPE', 'en'))
       .toBe('Unexpected upstream response: EPIPE');
+    expect(translateApiMessage('Impossible de récupérer le catalogue officiel Minecraft: Erreur réseau', 'en'))
+      .toBe('Unable to retrieve the official Minecraft catalog: Network error');
+    expect(translateApiMessage('Une instance avec le slug "Supprimer" existe déjà.', 'en'))
+      .toBe('An instance with slug "Supprimer" already exists.');
   });
   it('uses saved language ahead of browser language and localizes units and dates', () => {
     vi.stubGlobal('localStorage', { getItem: () => 'en' });

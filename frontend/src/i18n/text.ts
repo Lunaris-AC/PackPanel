@@ -32,8 +32,15 @@ export function translateApiMessage(message: string, language = selectedLanguage
   if (messages[message]) return translateMessage(message, language);
   for (const entry of dynamicMessages) {
     const match = entry.expression.exec(message);
-    if (match) return translateMessage(entry.source, language,
-      Object.fromEntries(entry.keys.map((key, index) => [key, match[index + 1]])));
+    if (match) {
+      const values = Object.fromEntries(entry.keys.map((key, index) => [key, match[index + 1]]));
+      // Catalog errors wrap another diagnostic. Translate that diagnostic too,
+      // while leaving names and paths in other messages exactly as supplied.
+      if (/^(Erreur |Impossible de récupérer le catalogue|Contrat MineLaunched)/.test(entry.source) && entry.source.endsWith(': {0}')) {
+        values['0'] = translateApiMessage(values['0'], language);
+      }
+      return translateMessage(entry.source, language, values);
+    }
   }
   return message;
 }
