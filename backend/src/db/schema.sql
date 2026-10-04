@@ -148,6 +148,8 @@ CREATE TABLE IF NOT EXISTS upload_files (
 );
 CREATE INDEX IF NOT EXISTS idx_upload_files_session ON upload_files(session_id);
 CREATE INDEX IF NOT EXISTS idx_upload_files_tus ON upload_files(tus_upload_id);
+-- CREATE TABLE IF NOT EXISTS cannot repair an older table missing this constraint.
+CREATE UNIQUE INDEX IF NOT EXISTS upload_files_session_id_relative_path_key ON upload_files(session_id, relative_path);
 
 -- Persistent Job Queue
 CREATE TABLE IF NOT EXISTS jobs (
