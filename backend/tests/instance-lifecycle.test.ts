@@ -1,10 +1,27 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterAll, describe, it, expect, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
 import { validateCombination, resolveJavaRequirement } from '../src/catalog';
 import { buildLauncherArtifact } from '../src/build/launcher-builder';
 import * as db from '../src/db';
+import { DATA_DIR } from '../src/config';
+vi.mock('../src/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/config')>();
+  const filesystem = await import('node:fs');
+  const paths = await import('node:path');
+  const system = await import('node:os');
+  const directory = filesystem.mkdtempSync(paths.join(system.tmpdir(), 'packpanel-artifact-unit-'));
+  return { ...actual, DATA_DIR: directory, config: { ...actual.config, DATA_DIR: directory } };
+});
+afterAll(() => {
+  if (path.dirname(path.resolve(DATA_DIR)) !== path.resolve(os.tmpdir()) || !path.basename(DATA_DIR).startsWith('packpanel-artifact-unit-')) {
+    throw new Error('Unexpected test storage path');
+  }
+  fs.rmSync(DATA_DIR, { recursive: true, force: true });
+  vi.restoreAllMocks();
+});
 vi.mock('../src/build/desktop-package', () => ({
   appendDesktopRuntime: async (archive: any) => archive.append('runtime fixture', { name: 'windows/electron.exe' })
 }));
