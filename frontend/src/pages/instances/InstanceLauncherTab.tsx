@@ -39,7 +39,9 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
   const text = (fr: string, en: string) => language === 'fr' ? fr : en;
   const [loading, setLoading] = useState(false);
   const [building, setBuilding] = useState(false);
-  const [targetOs, setTargetOs] = useState<'windows' | 'linux' | 'macos' | 'all'>('windows');
+  const [target, setTarget] = useState<'windows-installer' | 'windows' | 'linux' | 'macos' | 'all'>('windows-installer');
+  const targetOs = target === 'windows-installer' ? 'windows' : target;
+  const artifactFormat = target === 'windows-installer' ? 'installer' : 'zip';
   const [builds, setBuilds] = useState<LauncherBuild[]>([]);
   const [historyError, setHistoryError] = useState('');
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -95,7 +97,8 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
     linux: text('Préparation de Linux', 'Preparing Linux'),
     macos: text('Préparation de macOS', 'Preparing macOS'),
     archiving: text('Assemblage du ZIP', 'Assembling the ZIP'),
-    verifying: text('Vérification du ZIP', 'Verifying the ZIP')
+    installer: text('Création de l’installateur Windows', 'Creating the Windows installer'),
+    verifying: text('Vérification du fichier', 'Verifying the download')
   };
   useEffect(() => {
     if (isEnabled) void loadBuilds();
@@ -188,7 +191,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
       setBuilding(true);
       const res = await api.post<{ success: boolean; build: LauncherBuild }>(
         `/v2/instances/${instance.id}/launcher/build`,
-        { targetOs, background: true }
+        { targetOs, artifactFormat, background: true }
       );
       setBuilds(current => [res.build, ...current.filter(build => build.id !== res.build.id)]);
       await loadBuilds();
@@ -514,7 +517,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             </div>
 
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              {text('Le ZIP inclut le launcher et les réglages enregistrés ci-contre. Les joueurs reçoivent les fichiers du pack lors du lancement, à partir de la dernière version publiée.', 'The ZIP includes the launcher and the saved settings on this page. Players receive the latest published pack files when they launch the game.')}
+              {text('Le téléchargement inclut le launcher et les réglages enregistrés ci-contre. Les joueurs reçoivent les fichiers du pack lors du lancement, à partir de la dernière version publiée.', 'The download includes the launcher and the saved settings on this page. Players receive the latest published pack files when they launch the game.')}
             </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               {instance.active_release_id
@@ -523,18 +526,20 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             </p>
 
             <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'windows', label: 'Windows (.zip / .bat)' },
+              {([
+                { id: 'windows-installer', label: text('Windows · Installateur (.exe)', 'Windows · Installer (.exe)') },
+                { id: 'windows', label: 'Windows · Portable (.zip)' },
                 { id: 'linux', label: 'Linux (.zip / .sh)' },
                 { id: 'macos', label: 'macOS (.zip)' },
                 { id: 'all', label: tr("Toutes les plateformes") }
-              ].map(os => (
+              ] as const).map(os => (
                 <button
                   key={os.id}
                   type="button"
-                  onClick={() => setTargetOs(os.id as any)}
+                  aria-pressed={target === os.id}
+                  onClick={() => setTarget(os.id)}
                   className={`p-2.5 rounded-lg border text-left text-xs transition ${
-                    targetOs === os.id
+                    target === os.id
                       ? 'border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/20 font-bold text-indigo-700 dark:text-indigo-300'
                       : 'border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300'
                   }`}
@@ -546,7 +551,8 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
 
             <button
               onClick={handleTriggerBuild}
-              disabled={building || readOnly || !instance.active_release_id || launcher?.auth_offline === false || builds.some(build => build.target_os === targetOs && ['pending', 'building'].includes(build.status))}
+              disabled={building || readOnly || !instance.active_release_id || launcher?.auth_offline === false ||
+                builds.some(build => build.target_os === targetOs && (build.artifact_format || 'zip') === artifactFormat && ['pending', 'building'].includes(build.status))}
               className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-60"
             >
               {building ? (
@@ -557,7 +563,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>{tr("Générer le launcher (")}{targetOs.toUpperCase()})</span>
+                  <span>{artifactFormat === 'installer' ? text('Générer l’installateur Windows', 'Build Windows installer') : <>{tr("Générer le launcher (")}{targetOs.toUpperCase()})</>}</span>
                 </>
               )}
             </button>
@@ -570,7 +576,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
           {text('Page de téléchargement des joueurs', 'Player download page')}
         </h3>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          {text('Partagez un ZIP prêt depuis l’historique. Toute personne disposant du lien pourra le télécharger. Partager un nouveau ZIP remplace celui de la même plateforme.', 'Share a ready ZIP from the history below. Anyone with the link can download it. Sharing a new ZIP replaces the previous one for that platform.')}
+          {text('Partagez un fichier prêt depuis l’historique. Toute personne disposant du lien pourra le télécharger. Un nouveau partage remplace celui de la même plateforme.', 'Share a ready download from the history below. Anyone with the link can download it. A new share replaces the previous one for that platform.')}
         </p>
         {builds.some(build => build.shared_at) ? (
           <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-indigo-600 dark:text-indigo-300">
@@ -625,7 +631,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                     </td>
                     <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                        {b.target_os}
+                        {b.target_os} · {b.artifact_format === 'installer' ? 'EXE' : 'ZIP'}
                       </span>
                     </td>
                     <td className="py-3 px-3" aria-live="polite">

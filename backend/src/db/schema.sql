@@ -286,6 +286,8 @@ CREATE INDEX IF NOT EXISTS idx_launcher_builds_project ON launcher_builds(launch
 ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS stage VARCHAR(32);
 ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS instance_id UUID REFERENCES instances(id) ON DELETE CASCADE;
 ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS shared_at TIMESTAMPTZ;
+ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS artifact_format VARCHAR(16) NOT NULL DEFAULT 'zip'
+    CHECK (artifact_format IN ('zip', 'installer'));
 CREATE INDEX IF NOT EXISTS idx_launcher_builds_shared ON launcher_builds(instance_id, target_os, shared_at DESC)
 WHERE shared_at IS NOT NULL AND status = 'completed';
 -- Old synchronous builds can be left in progress after the API is restarted.

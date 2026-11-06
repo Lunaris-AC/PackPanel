@@ -6,6 +6,7 @@ import { config, DATA_DIR, getFilesBaseUrl } from '../config';
 import { appendDesktopRuntime } from './desktop-package';
 import { hashFile } from '../storage/hasher';
 import { JobQueue } from '../jobs/queue';
+import { buildWindowsInstaller } from './windows-installer';
 
 function createZipArchive(options: any) {
   const archiverModule = require('archiver');
@@ -28,26 +29,27 @@ export interface BuildLauncherOptions {
   targetOs: 'windows' | 'linux' | 'macos' | 'all';
   userId?: string;
   instanceId: string;
+  artifactFormat?: 'zip' | 'installer';
 }
 
 export async function reserveLauncherBuild(options: BuildLauncherOptions, background: boolean) {
   return withTransaction(async client => {
-    const { launcherProjectId, targetOs, userId, instanceId } = options;
+    const { launcherProjectId, targetOs, userId, instanceId, artifactFormat = 'zip' } = options;
     const project = await client.query('SELECT id FROM launcher_projects WHERE id = $1 FOR UPDATE', [launcherProjectId]);
     if (!project.rowCount) return null;
     const existing = await client.query(
       `SELECT id, version FROM launcher_builds WHERE launcher_project_id = $1 AND target_os = $2
-       AND (instance_id = $3 OR instance_id IS NULL) AND status IN ('pending', 'building')`,
-      [launcherProjectId, targetOs, instanceId]
+       AND (instance_id = $3 OR instance_id IS NULL) AND status IN ('pending', 'building') AND artifact_format = $4`,
+      [launcherProjectId, targetOs, instanceId, artifactFormat]
     );
     if (existing.rowCount) return { ...existing.rows[0], existing: true };
 
     const count = await client.query('SELECT COUNT(*) FROM launcher_builds WHERE launcher_project_id = $1', [launcherProjectId]);
     const version = `1.0.${Number(count.rows[0].count) + 1}`;
     const result = await client.query(
-      `INSERT INTO launcher_builds (launcher_project_id, version, target_os, status, logs, created_by_user_id, instance_id)
-       VALUES ($1, $2, $3, $4, '', $5, $6) RETURNING id, version, target_os, status, created_at, instance_id`,
-      [launcherProjectId, version, targetOs, background ? 'pending' : 'building', userId ?? null, instanceId]
+      `INSERT INTO launcher_builds (launcher_project_id, version, target_os, status, logs, created_by_user_id, instance_id, artifact_format)
+       VALUES ($1, $2, $3, $4, '', $5, $6, $7) RETURNING id, version, target_os, status, created_at, instance_id, artifact_format`,
+      [launcherProjectId, version, targetOs, background ? 'pending' : 'building', userId ?? null, instanceId, artifactFormat]
     );
     const build = result.rows[0];
     if (background) {
@@ -65,14 +67,16 @@ export async function buildLauncherArtifact(buildId: string, instanceId: string)
   version: string;
 } | null> {
   const buildRes = await query(
-    `SELECT p.*, b.version, b.target_os FROM launcher_builds b JOIN launcher_projects p ON p.id = b.launcher_project_id
+    `SELECT p.*, b.version, b.target_os, b.artifact_format FROM launcher_builds b JOIN launcher_projects p ON p.id = b.launcher_project_id
      WHERE b.id = $1 AND b.status IN ('pending', 'building')`, [buildId]);
   const proj = buildRes.rows[0];
   if (!proj) return null;
   const { version, target_os: targetOs } = proj as { version: string; target_os: BuildLauncherOptions['targetOs'] };
-  const artifactFilename = `launcher-${proj.slug}-${targetOs}-v${version}-${buildId}.zip`;
+  const installer = targetOs === 'windows' && proj.artifact_format === 'installer';
+  const artifactFilename = `launcher-${proj.slug}-${targetOs}-v${version}-${buildId}${installer ? '-setup.exe' : '.zip'}`;
   const artifactPath = path.join(BUILDS_DIR, artifactFilename);
   const temporaryPath = artifactPath + '.part';
+  const runtimePath = installer ? temporaryPath + '.zip' : temporaryPath;
   try {
     await fs.promises.mkdir(BUILDS_DIR, { recursive: true, mode: 0o755 });
     await query("UPDATE launcher_builds SET status = 'building', logs = $2 WHERE id = $1",
@@ -118,8 +122,8 @@ export async function buildLauncherArtifact(buildId: string, instanceId: string)
       }))
     };
 
-    const archive = createZipArchive({ zlib: { level: 3 } });
-    const output = fs.createWriteStream(temporaryPath);
+    const archive = createZipArchive(installer ? { store: true } : { zlib: { level: 3 } });
+    const output = fs.createWriteStream(runtimePath);
     const controller = new AbortController();
 
     archive.append(JSON.stringify(launcherConfig, null, 2), { name: 'packpanel-launcher.json' });
@@ -135,7 +139,7 @@ Instances incluses :
 ${instRes.rows.map(i => `- ${i.name} (Minecraft ${i.minecraft_version} - ${i.loader_type})`).join('\n')}
 
 Lancement :
-- Windows : Ouvrez windows/run-launcher.bat
+- Windows portable : Ouvrez windows/electron.exe
 - Linux : Exécutez linux/run-launcher.sh (session graphique requise)
 - macOS : Ouvrez macos/Electron.app
 `;
@@ -158,6 +162,12 @@ Lancement :
       throw error;
     }
 
+    if (installer) {
+      await query("UPDATE launcher_builds SET stage = 'installer' WHERE id = $1", [buildId]);
+      await buildWindowsInstaller(runtimePath, temporaryPath, {
+        id: instanceId, slug: instRes.rows[0].slug, title: proj.title, version
+      });
+    }
     await query("UPDATE launcher_builds SET stage = 'verifying' WHERE id = $1", [buildId]);
     const { sizeBytes: artifactSize, sha256: artifactSha256 } = await hashFile(temporaryPath);
     await fs.promises.rename(temporaryPath, artifactPath);
@@ -201,5 +211,7 @@ Lancement :
       [err.message || 'Erreur inconnue', `\n[ERREUR] ${err.stack || err.message}\n`, buildId]
     );
     throw err;
+  } finally {
+    if (installer) await fs.promises.rm(runtimePath, { force: true }).catch(() => {});
   }
 }

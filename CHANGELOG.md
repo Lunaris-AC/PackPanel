@@ -2,6 +2,7 @@
 
 ## 2026-11-06
 
+- Added a Windows x64 `.exe` installer with per-user installation, a Start menu shortcut and an uninstaller that keeps player data.
 - Added a bilingual player download page on the public files origin, with explicit sharing and revocation per platform, resumable ZIP downloads and release notes.
 - Moved launcher generation to a background worker and exposed build stages and errors in the panel.
 - Added pack preparation, repair, optional files and persistent local diagnostics to the desktop launcher.

@@ -9,7 +9,7 @@ interface PlayerPack {
   name: string;
   description: string;
   release: { id: string; notes?: string; publishedAt?: string; minecraftVersion?: string; loader?: string };
-  downloads: Array<{ platform: string; version: string; bytes: number; sha256: string; url: string }>;
+  downloads: Array<{ platform: string; format?: 'zip' | 'installer'; version: string; bytes: number; sha256: string; url: string }>;
 }
 
 const systems: Record<string, string> = { windows: 'Windows', linux: 'Linux', macos: 'macOS' };
@@ -96,7 +96,7 @@ export function PlayerDownloadPage() {
             <section className="mt-8" aria-labelledby="downloads">
               <h2 id="downloads" className="text-xl font-semibold">{text('Télécharger le launcher', 'Download the launcher')}</h2>
               <p className="text-sm text-slate-300 mt-2">
-                {text('Extrayez le ZIP en entier, puis ouvrez le fichier de lancement indiqué pour votre système.', 'Extract the entire ZIP, then open the launch file for your system.')}
+                {text('Choisissez le téléchargement pour votre système.', 'Choose the download for your system.')}
               </p>
               <ul className="grid gap-3 mt-4 sm:grid-cols-2 lg:grid-cols-3">
                 {pack.downloads.map(download => (
@@ -106,13 +106,17 @@ export function PlayerDownloadPage() {
                     </h3>
                     <p className="text-xs text-slate-300 mt-2">v{download.version} · {formatBytes(download.bytes)}</p>
                     <p className="text-xs text-slate-300 mt-2 mb-4 break-words">
-                      {download.platform === 'windows' ? 'windows/run-launcher.bat' :
-                        download.platform === 'linux' ? 'linux/run-launcher.sh' :
-                          download.platform === 'macos' ? 'macos/Electron.app' :
-                            text('Voir README.txt dans l’archive.', 'See README.txt in the archive.')}
+                      {download.format === 'installer'
+                        ? text('Ouvrez le fichier .exe. Le launcher sera disponible dans le menu Démarrer.', 'Open the .exe. The launcher will be available from the Start menu.')
+                        : text('Extrayez tout le ZIP, puis ouvrez ', 'Extract the entire ZIP, then open ') + (
+                          download.platform === 'windows' ? 'windows/electron.exe' :
+                          download.platform === 'linux' ? 'linux/run-launcher.sh' :
+                            download.platform === 'macos' ? 'macos/Electron.app' : 'README.txt')}
                     </p>
                     <a href={download.url} className="mt-auto flex justify-center gap-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 py-2 text-sm font-semibold">
-                      <ArrowDownToLine className="size-4" /> {text('Télécharger le ZIP', 'Download ZIP')}
+                      <ArrowDownToLine className="size-4" /> {download.format === 'installer'
+                        ? text('Télécharger l’installateur (.exe)', 'Download installer (.exe)')
+                        : text('Télécharger le ZIP', 'Download ZIP')}
                     </a>
                     {download.sha256 && <button onClick={() => copy(download.sha256)} className="flex justify-center items-center gap-2 mt-3 text-xs text-slate-300 hover:text-white">
                       {copied === download.sha256 ? <Check className="size-3" /> : <Copy className="size-3" />}

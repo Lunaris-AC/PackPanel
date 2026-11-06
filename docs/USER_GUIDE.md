@@ -27,25 +27,32 @@ Le client est dédié à cette instance : il ne présente pas de liste d’insta
 aux joueurs. Le mode actuel utilise un pseudo offline ; Microsoft sera ajouté
 et validé ultérieurement.
 
-Publiez l’instance et enregistrez les réglages du launcher. Choisissez une
-plateforme puis cliquez sur **Générer le launcher**. La tâche continue en
-arrière-plan. Quand son statut indique **Prêt**, cliquez sur **Télécharger**
-dans l’historique et distribuez le ZIP complet aux joueurs.
+Publiez l’instance et enregistrez les réglages du launcher. Pour Windows 64 bits,
+cliquez sur **Générer l’installateur Windows**. Les autres formats restent
+disponibles dans le sélecteur. La tâche continue en arrière-plan. Quand son
+statut indique **Prêt**, vous pouvez télécharger le fichier dans l’historique.
 
 Pour donner aux joueurs un lien sans compte administrateur, cliquez sur
 **Partager** dans l’historique, puis sur **Copier le lien** dans la section
-**Page de téléchargement des joueurs**. Une nouvelle archive partagée remplace
-celle de la même plateforme. **Retirer le partage** désactive l’ancien lien de
+**Page de téléchargement des joueurs**. Un nouveau fichier partagé remplace
+celui de la même plateforme. **Retirer le partage** désactive son lien de
 téléchargement.
 
-Générez un nouveau ZIP après un changement d’apparence. Les launchers déjà
+Générez un nouveau fichier après un changement d’apparence. Les launchers déjà
 distribués récupèrent les modifications du pack à la prochaine ouverture du jeu,
 après publication.
 
 ## Jouer
 
-Extrayez tout le ZIP dans un dossier puis ouvrez `windows/run-launcher.bat`.
-Le runtime Electron est inclus : Node.js n’est pas requis sur le poste du joueur.
+Sous Windows, ouvrez l’installateur `.exe` téléchargé et suivez l’assistant.
+L’installation se fait dans votre compte Windows sans droits administrateur.
+Le launcher est accessible dans le dossier **PackPanel** du menu Démarrer.
+Vous pouvez le retirer depuis **Paramètres → Applications**. Vos données de jeu
+et réglages sont conservés.
+
+Si vous avez téléchargé le ZIP Windows portable, extrayez-le en entier et
+ouvrez `windows/electron.exe`. Le runtime Electron est inclus dans les deux
+formats. Node.js n’est pas requis sur le poste du joueur.
 Une connexion Internet est nécessaire pour récupérer le pack, Minecraft, ses
 bibliothèques et Java si la version requise manque.
 

@@ -653,9 +653,14 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       preHandler: [requireRole(['admin', 'operator'])]
     }, async (req, reply) => {
       const { id } = req.params as { id: string };
-      const parsed = z.object({ targetOs: z.enum(['windows', 'linux', 'macos', 'all']).default('windows'), background: z.boolean().default(false) }).safeParse(req.body ?? {});
+      const parsed = z.object({
+        targetOs: z.enum(['windows', 'linux', 'macos', 'all']).default('windows'),
+        background: z.boolean().default(false),
+        artifactFormat: z.enum(['zip', 'installer']).default('zip')
+      }).refine(data => data.artifactFormat !== 'installer' || data.targetOs === 'windows').safeParse(req.body ?? {});
       if (!parsed.success) return reply.status(400).send({ error: 'Plateforme ou mode de génération invalide' });
-      const { targetOs, background } = parsed.data;
+      const { targetOs, background, artifactFormat } = parsed.data;
+      const enqueue = background || artifactFormat === 'installer';
 
       const instRes = await query('SELECT id, endpoint_id, launcher_enabled, launcher_project_id FROM instances WHERE id::text = $1 OR slug = $1', [id]);
       const inst = instRes.rows[0];
@@ -667,12 +672,13 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         launcherProjectId: inst.launcher_project_id,
         instanceId: inst.id,
         targetOs,
+        artifactFormat,
         userId: req.user!.userId
-      }, background);
+      }, enqueue);
       if (!build) return reply.status(404).send({ error: 'Projet de launcher introuvable' });
       if (build.existing) return reply.status(409).send({ error: 'Une génération est déjà en cours pour cette plateforme.' });
-      await recordAuditLog(req.user!.userId, 'build_launcher', 'instance', inst.id, { targetOs, version: build.version }, req.ip);
-      if (background) return reply.status(202).send({ success: true, build });
+      await recordAuditLog(req.user!.userId, 'build_launcher', 'instance', inst.id, { targetOs, artifactFormat, version: build.version }, req.ip);
+      if (enqueue) return reply.status(202).send({ success: true, build });
 
       const result = await buildLauncherArtifact(build.id, inst.id);
       return reply.status(201).send({ success: true, build: result });
@@ -728,7 +734,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         return 'updated';
       });
       if (result === 'missing') return reply.status(404).send({ error: 'Build introuvable' });
-      if (result === 'unavailable') return reply.status(409).send({ error: 'Publiez l’instance et générez une archive disponible avant de la partager.' });
+      if (result === 'unavailable') return reply.status(409).send({ error: 'Publiez l’instance et générez un fichier de téléchargement avant de le partager.' });
       await recordAuditLog(req.user!.userId, shared ? 'share_launcher' : 'unshare_launcher', 'launcher_build', buildId, {}, req.ip);
       return reply.send({ success: true });
     });

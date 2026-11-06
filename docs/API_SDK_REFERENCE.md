@@ -17,9 +17,9 @@ Administrative routes require a session cookie (`packpanel_session`) or `Authori
 | POST | `/api/v2/instances/:id/launcher/disable` | Disable the dedicated launcher |
 | PUT | `/api/v2/instances/:id/launcher` | Save branding/configuration |
 | POST | `/api/v2/instances/:id/launcher/media` | Upload an image |
-| POST | `/api/v2/instances/:id/launcher/build` | Send `background: true` to queue a build and receive HTTP 202 with its ID. Poll the build history and download after completion. The synchronous call remains available for existing clients. |
+| POST | `/api/v2/instances/:id/launcher/build` | Send `targetOs: "windows"` and `artifactFormat: "installer"` for a queued Windows x64 `.exe` build (HTTP 202). ZIP is the default format. ZIP builds accept `background: true` to return HTTP 202. Poll the build history and download after completion. |
 | GET | `/api/v2/instances/:id/launcher/builds` | Build history |
-| GET | `/api/v2/instances/:id/launcher/builds/:buildId/download` | Download an authenticated archive |
+| GET | `/api/v2/instances/:id/launcher/builds/:buildId/download` | Download an authenticated ZIP or installer |
 | PUT | `/api/v2/instances/:id/launcher/builds/:buildId/share` | Set `{ "shared": true }` to expose a completed build on the player page or `false` to revoke it. Sharing a build replaces the public build for the same platform. |
 
 Players can open `/play/:slug` on the files domain without a session. The public `GET /play-api/:slug`

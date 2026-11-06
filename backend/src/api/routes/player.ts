@@ -46,7 +46,8 @@ export async function sendLauncherArchive(req: FastifyRequest, reply: FastifyRep
 
   const filename = path.basename(file);
   reply.header('Content-Disposition', `attachment; filename="${filename}"`)
-    .type('application/zip').header('Content-Length', Math.max(0, end - start + 1));
+    .type(filename.endsWith('.exe') ? 'application/octet-stream' : 'application/zip')
+    .header('Content-Length', Math.max(0, end - start + 1));
   if (req.method === 'HEAD' || !size) return reply.send();
   return reply.send(fs.createReadStream(file, { start, end }));
 }
@@ -66,7 +67,7 @@ export async function playerRoutes(server: FastifyInstance) {
     const { slug } = req.params;
     const result = await query(`
       SELECT i.name, i.description, r.release_id, r.release_notes, r.published_at, r.game_config,
-             b.id, b.target_os, b.version, b.artifact_path, b.artifact_size, b.artifact_sha256
+             b.id, b.target_os, b.version, b.artifact_path, b.artifact_size, b.artifact_sha256, b.artifact_format
       ${sharedBuilds}
       ORDER BY b.shared_at DESC, b.id DESC`, [slug]);
     const available = [];
@@ -76,6 +77,7 @@ export async function playerRoutes(server: FastifyInstance) {
       platforms.add(build.target_os);
       available.push({
         platform: build.target_os,
+        format: build.artifact_format,
         version: build.version,
         bytes: Number(build.artifact_size),
         sha256: build.artifact_sha256,

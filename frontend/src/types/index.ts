@@ -188,10 +188,11 @@ export interface LauncherBuild {
   artifact_path?: string;
   artifact_size?: number;
   artifact_sha256?: string;
+  artifact_format?: 'zip' | 'installer';
   instance_id?: string | null;
   shared_at?: string | null;
   status: 'pending' | 'building' | 'completed' | 'failed';
-  stage?: 'windows' | 'linux' | 'macos' | 'archiving' | 'verifying';
+  stage?: 'windows' | 'linux' | 'macos' | 'archiving' | 'installer' | 'verifying';
   error_message?: string;
   created_by_username?: string;
   created_at: string;
