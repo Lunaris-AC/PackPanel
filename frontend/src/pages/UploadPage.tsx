@@ -59,8 +59,8 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
     setCurrentFileName(file.name);
 
     const formData = new FormData();
-    formData.append('file', file);
     formData.append('mode', mode);
+    formData.append('file', file);
 
     try {
       const res = await api.post<{ sessionId: string; jobId: string }>(
@@ -100,8 +100,10 @@ export const UploadPage: React.FC<UploadPageProps> = ({ endpointId, onSuccess })
         const relPath = file.webkitRelativePath || file.name;
 
         await new Promise<void>((resolve, reject) => {
+          const token = localStorage.getItem('packpanel_token');
           const upload = new tus.Upload(file, {
             endpoint: '/api/uploads/tus',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
             retryDelays: [0, 1000, 3000, 5000],
             chunkSize: 8 * 1024 * 1024, // 8MB chunks
             metadata: {

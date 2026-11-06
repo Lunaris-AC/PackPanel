@@ -283,9 +283,22 @@ CREATE TABLE IF NOT EXISTS launcher_builds (
     completed_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_launcher_builds_project ON launcher_builds(launcher_project_id, created_at DESC);
+ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS stage VARCHAR(32);
+ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS instance_id UUID REFERENCES instances(id) ON DELETE CASCADE;
+ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS shared_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_launcher_builds_shared ON launcher_builds(instance_id, target_os, shared_at DESC)
+WHERE shared_at IS NOT NULL AND status = 'completed';
+-- Old synchronous builds can be left in progress after the API is restarted.
+UPDATE launcher_builds b
+SET status = 'failed', error_message = 'Génération interrompue. Relancez le build.', completed_at = NOW()
+WHERE b.status IN ('pending', 'building') AND NOT EXISTS (
+    SELECT 1 FROM jobs j WHERE j.job_type = 'build_launcher' AND j.status IN ('pending', 'running')
+    AND j.payload->>'buildId' = b.id::text
+);
 
 -- Instance-Centric V3 Enhancements
 ALTER TABLE releases ADD COLUMN IF NOT EXISTS game_config JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS release_notes TEXT;
 ALTER TABLE instances ADD COLUMN IF NOT EXISTS launcher_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE instances ADD COLUMN IF NOT EXISTS launcher_project_id UUID REFERENCES launcher_projects(id) ON DELETE SET NULL;
 

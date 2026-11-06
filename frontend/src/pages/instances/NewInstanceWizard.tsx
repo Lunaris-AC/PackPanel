@@ -1,6 +1,6 @@
 import { useTranslation } from '../../i18n';
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
   ArrowLeft,
@@ -22,6 +22,7 @@ import { LoaderType, MinecraftVersionSummary, LoaderCompatibilitySummary, Loader
 export const NewInstanceWizard: React.FC = () => {
   const { tr } = useTranslation();
   const navigate = useNavigate();
+  const draft = useLocation().state as { name?: string; slug?: string } | null;
   const { toast } = useToast();
 
   const [loadingCatalog, setLoadingCatalog] = useState(true);
@@ -30,8 +31,8 @@ export const NewInstanceWizard: React.FC = () => {
   const [mcSearch, setMcSearch] = useState('');
 
   // Form State
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
+  const [name, setName] = useState(draft?.name ?? '');
+  const [slug, setSlug] = useState(draft?.slug ?? '');
   const [description, setDescription] = useState('');
   const [minecraftVersion, setMinecraftVersion] = useState('1.21.1');
   const [loaderType, setLoaderType] = useState<LoaderType>('fabric');

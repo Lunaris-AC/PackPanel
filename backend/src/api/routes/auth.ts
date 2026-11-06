@@ -36,7 +36,8 @@ export async function authRoutes(fastify: FastifyInstance) {
     const bodySchema = z.object({
       username: z.string().min(1),
       password: z.string().min(1),
-      totpCode: z.string().optional()
+      totpCode: z.string().optional(),
+      cookieOnly: z.boolean().optional()
     });
 
     const parsed = bodySchema.safeParse(req.body);
@@ -44,7 +45,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Identifiants invalides' });
     }
 
-    const { username, password, totpCode } = parsed.data;
+    const { username, password, totpCode, cookieOnly } = parsed.data;
 
     const res = await query('SELECT id, username, password_hash, role, totp_secret, totp_enabled, totp_recovery_codes FROM users WHERE username = $1', [username]);
     if (res.rows.length === 0) {
@@ -80,9 +81,10 @@ export async function authRoutes(fastify: FastifyInstance) {
       if (!validTotp && user.totp_recovery_codes && Array.isArray(user.totp_recovery_codes)) {
         const result = verifyRecoveryCode(totpCode, user.totp_recovery_codes, user.id);
         if (result.valid && result.matchingHash) {
-          isRecoveryCode = true;
-          const remaining = user.totp_recovery_codes.filter((c: string) => c !== result.matchingHash);
-          await query('UPDATE users SET totp_recovery_codes = $1 WHERE id = $2', [remaining, user.id]);
+          const consumed = await query(
+            `UPDATE users SET totp_recovery_codes = array_remove(totp_recovery_codes, $2)
+             WHERE id = $1 AND totp_enabled AND $2 = ANY(totp_recovery_codes)`, [user.id, result.matchingHash]);
+          isRecoveryCode = Boolean(consumed.rowCount);
         }
       }
 
@@ -113,14 +115,14 @@ export async function authRoutes(fastify: FastifyInstance) {
     await query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
     await recordAuditLog(user.id, 'login', 'user', user.id, { username, twoFactorUsed: user.totp_enabled }, ip);
 
-    return reply.send({
+    return reply.header('Cache-Control', 'no-store').send({
       user: {
         id: user.id,
         username: user.username,
         role: user.role,
         totp_enabled: user.totp_enabled
       },
-      token: `${sessionId}:${token}`
+      ...(cookieOnly ? {} : { token: `${sessionId}:${token}` })
     });
   });
 
@@ -158,12 +160,13 @@ export async function authRoutes(fastify: FastifyInstance) {
     const hashedCodes = recoveryCodes.map(c => hashRecoveryCode(c, req.user!.userId));
     const otpauthUri = getOtpAuthUri(req.user!.username, secret);
 
-    await query(
+    const updated = await query(
       `UPDATE users
        SET totp_secret = $1, totp_recovery_codes = $2
-       WHERE id = $3`,
+       WHERE id = $3 AND NOT totp_enabled`,
       [secret, hashedCodes, req.user!.userId]
     );
+    if (!updated.rowCount) return reply.status(409).send({ error: 'La double authentification est déjà activée.' });
 
     return reply.send({
       secret,

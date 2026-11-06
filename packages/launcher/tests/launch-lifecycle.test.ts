@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { redactDiagnostics } from '../src/main/player-state';
 const state = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => any>(), launch: vi.fn(), engine: null as any, offline: true, saved: '', openPath: vi.fn().mockResolvedValue('') }));
 vi.mock('electron', () => ({
   app: { commandLine: { getSwitchValue: () => '' }, getPath: () => '/temporary-launcher-test', getAppPath: () => '/app', whenReady: () => new Promise(() => {}), on: vi.fn() },
@@ -25,6 +26,12 @@ beforeEach(async () => {
   await import('../src/main/index');
 });
 describe('Desktop launch lifecycle', () => {
+  it('redacts credential-shaped values and the user directory from copied diagnostics', () => {
+    const log = 'C:\\Users\\Player\\game --accessToken "private-key"\nAuthorization: Bearer not-for-sharing\n{"refresh_token":"private-refresh"}';
+    const result = redactDiagnostics(log, 'C:\\Users\\Player');
+    for (const secret of ['private-key', 'not-for-sharing', 'private-refresh', 'Users\\Player']) expect(result).not.toContain(secret);
+    expect(result).toContain('~\\game');
+  });
   it('requires a login and respects the configured auth provider', async () => {
     await expect(invoke('launchInstance', { instanceId: '22222222-2222-4222-8222-222222222222' })).rejects.toThrow('connecter');
     state.offline = false;

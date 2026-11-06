@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import { pipeline } from 'node:stream/promises';
+import { randomUUID } from 'node:crypto';
 import yauzl from 'yauzl';
-import { query } from '../../db';
+import { query, withTransaction } from '../../db';
 import { sanitizeRelativePath } from '../../storage/paths';
 import { storeObjectFromPath } from '../../storage/cas';
 import { config, UPLOADS_DIR } from '../../config';
@@ -15,6 +17,7 @@ export interface ExtractZipPayload {
   userId?: string;
   mode: 'add_replace' | 'full_replace';
   stripRootFolder?: boolean;
+  immediatePublish?: boolean;
 }
 
 export function openZip(zipPath: string): Promise<yauzl.ZipFile> {
@@ -27,8 +30,16 @@ export function openZip(zipPath: string): Promise<yauzl.ZipFile> {
 }
 
 export async function handleExtractZipImport(payload: ExtractZipPayload): Promise<void> {
-  const { endpointId, userId, mode, stripRootFolder = false } = payload;
+  const { endpointId, userId, mode, stripRootFolder = false, immediatePublish } = payload;
   const zipFilePath = payload.zipFilePath || payload.zipPath;
+  if (payload.sessionId) {
+    const session = await query('SELECT status FROM upload_sessions WHERE id = $1 AND endpoint_id = $2', [payload.sessionId, endpointId]);
+    if (!session.rows.length) throw new Error('Session d’import introuvable.');
+    if (['sealed', 'completed'].includes(session.rows[0].status)) {
+      if (zipFilePath) await fs.promises.rm(zipFilePath, { force: true }).catch(() => {});
+      return;
+    }
+  }
 
   if (!zipFilePath || !fs.existsSync(zipFilePath)) {
     throw new Error(`Archive ZIP introuvable : ${zipFilePath}`);
@@ -43,20 +54,16 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
   let hasModrinthJson = false;
   let hasRealMods = false;
   let commonPrefix: string | null = null;
-  const entriesToExtract: Array<{ entry: yauzl.Entry; cleanPath: string; isDir: boolean }> = [];
-
-  const inspectPromise = new Promise<void>((resolve, reject) => {
-    zipfile.readEntry();
-
-    zipfile.on('entry', (entry: yauzl.Entry) => {
+  try {
+    for await (const entry of zipfile.eachEntry()) {
       entryCount++;
       if (entryCount > config.MAX_ZIP_ENTRY_COUNT) {
-        return reject(new Error(`L'archive dépasse la limite maximale de ${config.MAX_ZIP_ENTRY_COUNT} entrées (protection zip bomb).`));
+        throw new Error(`L'archive dépasse la limite maximale de ${config.MAX_ZIP_ENTRY_COUNT} entrées (protection zip bomb).`);
       }
 
       totalUncompressedBytes += entry.uncompressedSize;
       if (totalUncompressedBytes > config.MAX_ZIP_EXTRACT_SIZE_MIB * 1024 * 1024) {
-        return reject(new Error(`La taille décompressée dépasse la limite de ${config.MAX_ZIP_EXTRACT_SIZE_MIB} Mio (protection zip bomb).`));
+        throw new Error(`La taille décompressée dépasse la limite de ${config.MAX_ZIP_EXTRACT_SIZE_MIB} Mio (protection zip bomb).`);
       }
 
       const fileName = entry.fileName.replace(/\\+/g, '/');
@@ -76,18 +83,12 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
           } else if (commonPrefix !== rootFolder) {
             commonPrefix = ''; // multiple root folders
           }
-        }
+        } else commonPrefix = '';
       }
-
-      const isDir = /\/$/.test(fileName);
-      zipfile.readEntry();
-    });
-
-    zipfile.on('end', () => resolve());
-    zipfile.on('error', (err) => reject(err));
-  });
-
-  await inspectPromise;
+    }
+  } finally {
+    zipfile.close();
+  }
 
   // Check if this is an export manifest without binaries
   if ((hasManifestJson || hasModrinthJson) && !hasRealMods) {
@@ -95,11 +96,6 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
       `L'archive fournie est un export de launcher (CurseForge/Modrinth) contenant uniquement un manifeste sans les binaires des mods. PackPanel requiert les vrais fichiers du modpack (dossiers mods/, config/, etc.).`
     );
   }
-
-  // Second pass: extract and store files
-  const zipfile2 = await openZip(zipFilePath);
-  const stagingSessionDir = path.join(UPLOADS_DIR, `zip_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
-  fs.mkdirSync(stagingSessionDir, { recursive: true, mode: 0o750 });
 
   // Create an upload_session for this zip import
   const sessionRes = payload.sessionId ? await query('SELECT id FROM upload_sessions WHERE id = $1 AND endpoint_id = $2', [payload.sessionId, endpointId]) : await query(
@@ -111,12 +107,15 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
   if (!sessionRes.rows.length) throw new Error('Session d’import introuvable.');
   const sessionId = sessionRes.rows[0].id;
 
-  const validEntries: Array<{ cleanPath: string; isDir: boolean; sha256: string; sha1: string; size: number }> = [];
-
-  const extractPromise = new Promise<void>((resolve, reject) => {
-    zipfile2.readEntry();
-
-    zipfile2.on('entry', (entry: yauzl.Entry) => {
+  const validEntries: Array<{ cleanPath: string; sha256: string; sha1: string; sizeBytes: number }> = [];
+  const seen = new Set<string>();
+  const stagingSessionDir = await fs.promises.mkdtemp(path.join(UPLOADS_DIR, 'zip_'));
+  const extraction = await openZip(zipFilePath).catch(async error => {
+    await fs.promises.rm(stagingSessionDir, { recursive: true, force: true });
+    throw error;
+  });
+  try {
+    for await (const entry of extraction.eachEntry()) {
       let rawPath = entry.fileName.replace(/\\+/g, '/');
 
       // Strip common root if requested and valid
@@ -124,81 +123,36 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
         rawPath = rawPath.substring(commonPrefix.length);
       }
 
-      if (!rawPath || rawPath === '' || rawPath === '/') {
-        zipfile2.readEntry();
-        return;
-      }
-
-      const isDir = /\/$/.test(rawPath);
-      const validation = sanitizeRelativePath(rawPath, isDir);
-      if (!validation.valid || !validation.normalizedPath) {
-        // Skip illegal or root entries safely
-        zipfile2.readEntry();
-        return;
-      }
-
+      if (!rawPath || rawPath.endsWith('/')) continue;
+      const validation = sanitizeRelativePath(rawPath);
+      if (!validation.valid || !validation.normalizedPath) throw new Error(validation.error ?? 'Chemin ZIP invalide');
       const cleanPath = validation.normalizedPath;
+      const normalized = cleanPath.toLowerCase();
+      if (seen.has(normalized)) throw new Error(`L'archive contient plusieurs fichiers au chemin "${cleanPath}".`);
+      seen.add(normalized);
 
-      if (isDir) {
-        validEntries.push({ cleanPath, isDir: true, sha256: '', sha1: '', size: 0 });
-        zipfile2.readEntry();
-        return;
-      }
+      const tempEntryPath = path.join(stagingSessionDir, randomUUID());
+      await pipeline(await extraction.openReadStreamPromise(entry), fs.createWriteStream(tempEntryPath));
+      const stored = await storeObjectFromPath(tempEntryPath);
+      validEntries.push({ cleanPath, ...stored });
+    }
+  } finally {
+    extraction.close();
+    await fs.promises.rm(stagingSessionDir, { recursive: true, force: true });
+  }
+  if (!validEntries.length) throw new Error("L’archive ZIP ne contient aucun fichier.");
 
-      // Extract file to staging
-      const tempEntryPath = path.join(stagingSessionDir, `e_${Math.random().toString(36).substring(2, 10)}`);
-      zipfile2.openReadStream(entry, (err, readStream) => {
-        if (err || !readStream) {
-          return reject(err || new Error(`Impossible d'extraire ${cleanPath}`));
-        }
-
-        const writeStream = fs.createWriteStream(tempEntryPath);
-        readStream.pipe(writeStream);
-
-        writeStream.on('finish', async () => {
-          try {
-            // Store directly in CAS
-            const casObj = await storeObjectFromPath(tempEntryPath);
-            validEntries.push({
-              cleanPath,
-              isDir: false,
-              sha256: casObj.sha256,
-              sha1: casObj.sha1,
-              size: casObj.sizeBytes
-            });
-            zipfile2.readEntry();
-          } catch (e) {
-            reject(e);
-          }
-        });
-
-        writeStream.on('error', (err) => reject(err));
-      });
-    });
-
-    zipfile2.on('end', () => resolve());
-    zipfile2.on('error', (err) => reject(err));
-  });
-
-  await extractPromise;
-
-  // Insert upload_files
-  for (const item of validEntries) {
-    if (!item.isDir) {
-      await query(
+  await withTransaction(async client => {
+    for (const item of validEntries) {
+      await client.query(
         `INSERT INTO upload_files (session_id, relative_path, expected_size, received_size, sha256, sha1, status)
          VALUES ($1, $2, $3, $3, $4, $5, 'verified')
          ON CONFLICT (session_id, relative_path) DO NOTHING`,
-        [sessionId, item.cleanPath, item.size, item.sha256, item.sha1]
+        [sessionId, item.cleanPath, item.sizeBytes, item.sha256, item.sha1]
       );
     }
-  }
-
-  // Update session
-  const fileCount = validEntries.filter(e => !e.isDir).length;
-  const totalBytes = validEntries.reduce((sum, e) => sum + e.size, 0);
-
-  await query(
+    const totalBytes = validEntries.reduce((sum, item) => sum + item.sizeBytes, 0);
+    await client.query(
     `UPDATE upload_sessions
      SET expected_files_count = $1,
          total_files = $1,
@@ -208,17 +162,9 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
          total_bytes_received = $2,
          status = 'sealed'
      WHERE id = $3`,
-    [fileCount, totalBytes, sessionId]
-  );
-
-  // Clean staging
-  try {
-    fs.rmSync(stagingSessionDir, { recursive: true, force: true });
-    if (fs.existsSync(zipFilePath)) fs.unlinkSync(zipFilePath);
-  } catch (e) {
-    // ignore
-  }
-
-  // Enqueue build and publish release
-  await JobQueue.enqueue('seal_and_build_release', { sessionId });
+      [validEntries.length, totalBytes, sessionId]
+    );
+    await JobQueue.enqueue('seal_and_build_release', { sessionId, immediatePublish }, 0, 3, client.query.bind(client) as typeof query);
+  });
+  await fs.promises.rm(zipFilePath, { force: true }).catch(() => {});
 }

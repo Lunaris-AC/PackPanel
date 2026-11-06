@@ -71,14 +71,13 @@ describe('Instance-Centric Architecture & Catalog Tests', () => {
     const mockBuildId = crypto.randomUUID();
 
     // Mock db queries for builder
-    vi.spyOn(db, 'query').mockImplementation(async (sql: string, params?: any[]) => {
-      if (sql.includes('SELECT COUNT(*)')) {
-        return { rows: [{ count: '0' }] } as any;
-      }
-      if (sql.includes('SELECT * FROM launcher_projects')) {
+    vi.spyOn(db, 'query').mockImplementation(async (sql: string) => {
+      if (sql.includes('FROM launcher_builds b JOIN launcher_projects')) {
         return {
           rows: [{
             id: mockProjectId,
+            version: '1.0.1',
+            target_os: 'windows',
             name: 'Inferi Test Modpack',
             slug: 'inferi-test',
             title: 'Inferi Launcher',
@@ -105,27 +104,14 @@ describe('Instance-Centric Architecture & Catalog Tests', () => {
           }]
         } as any;
       }
-      if (sql.includes('INSERT INTO launcher_builds')) {
-        return {
-          rows: [{
-            id: mockBuildId,
-            launcher_project_id: mockProjectId,
-            target_os: params?.[1] || 'windows',
-            version: params?.[2] || '1.0.0',
-            status: 'building'
-          }]
-        } as any;
-      }
       if (sql.includes('UPDATE launcher_builds')) {
-        return { rows: [] } as any;
+        return { rows: [], rowCount: 1 } as any;
       }
       return { rows: [] } as any;
     });
 
-    const build = await buildLauncherArtifact({
-      launcherProjectId: mockProjectId,
-      targetOs: 'windows'
-    });
+    const build = await buildLauncherArtifact(mockBuildId, crypto.randomUUID());
+    if (!build) throw new Error('Expected the reserved build to be available');
 
     expect(build.buildId).toBe(mockBuildId);
     expect(build.artifactSha256).toBeDefined();

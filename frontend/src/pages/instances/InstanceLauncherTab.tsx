@@ -20,9 +20,10 @@ import {
   Clock
 } from 'lucide-react';
 import { api } from '../../api/client';
-import { MinecraftInstance, LauncherProjectWithBuilds, LauncherBuild } from '../../types';
+import { MinecraftInstance, LauncherBuild } from '../../types';
 import { useToast } from '../../components/Toast';
 import { useTranslation } from '../../i18n';
+import { translateApiMessage } from '../../i18n/text';
 import launcherLandscape from '../../../../packages/launcher/src/renderer/landscape.svg';
 
 interface InstanceLauncherTabProps {
@@ -40,18 +41,22 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
   const [building, setBuilding] = useState(false);
   const [targetOs, setTargetOs] = useState<'windows' | 'linux' | 'macos' | 'all'>('windows');
   const [builds, setBuilds] = useState<LauncherBuild[]>([]);
+  const [historyError, setHistoryError] = useState('');
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [sharing, setSharing] = useState<string | null>(null);
 
   // Launcher Config State
   const launcher = instance.launcher;
   const isEnabled = Boolean(instance.launcher_enabled && launcher);
+  const readOnly = instance.permissions?.can_write === false;
+  const canShare = !readOnly && instance.permissions?.can_publish === true;
+  const playerPage = instance.player_page_url || `/play/${encodeURIComponent(instance.slug)}`;
 
   const [title, setTitle] = useState(launcher?.title || `${instance.name} Launcher`);
   const [template, setTemplate] = useState<'minimal' | 'community' | 'network'>(launcher?.template || 'community');
   const [accentColor, setAccentColor] = useState(launcher?.accent_color || '#6366f1');
   const [backgroundUrl, setBackgroundUrl] = useState(launcher?.background_url || '');
   const [logoUrl, setLogoUrl] = useState(launcher?.logo_url || '');
-  const [authMicrosoft, setAuthMicrosoft] = useState(launcher?.auth_microsoft ?? false);
-  const [authOffline, setAuthOffline] = useState(launcher?.auth_offline ?? true);
   const [discordUrl, setDiscordUrl] = useState(launcher?.discord_url || '');
   const [websiteUrl, setWebsiteUrl] = useState(launcher?.website_url || '');
 
@@ -69,11 +74,8 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
       setAccentColor(launcher.accent_color || '#6366f1');
       setBackgroundUrl(launcher.background_url || '');
       setLogoUrl(launcher.logo_url || '');
-      setAuthMicrosoft(launcher.auth_microsoft ?? false);
-      setAuthOffline(launcher.auth_offline ?? true);
       setDiscordUrl(launcher.discord_url || '');
       setWebsiteUrl(launcher.website_url || '');
-      setBuilds(launcher.builds || []);
     }
   }, [launcher, instance.name]);
 
@@ -81,10 +83,28 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
     try {
       const res = await api.get<{ builds: LauncherBuild[] }>(`/v2/instances/${instance.id}/launcher/builds`);
       setBuilds(res.builds || []);
+      setHistoryError('');
     } catch (err) {
-      console.error('Failed to load builds', err);
+      setHistoryError(err instanceof Error ? err.message : tr("Erreur"));
     }
   };
+
+  const hasActiveBuild = builds.some(build => build.status === 'pending' || build.status === 'building');
+  const buildStages = {
+    windows: text('Préparation de Windows', 'Preparing Windows'),
+    linux: text('Préparation de Linux', 'Preparing Linux'),
+    macos: text('Préparation de macOS', 'Preparing macOS'),
+    archiving: text('Assemblage du ZIP', 'Assembling the ZIP'),
+    verifying: text('Vérification du ZIP', 'Verifying the ZIP')
+  };
+  useEffect(() => {
+    if (isEnabled) void loadBuilds();
+  }, [instance.id, isEnabled]);
+  useEffect(() => {
+    if (!isEnabled || !hasActiveBuild) return;
+    const timer = window.setInterval(loadBuilds, 2000);
+    return () => window.clearInterval(timer);
+  }, [instance.id, isEnabled, hasActiveBuild]);
 
   const handleEnableLauncher = async () => {
     try {
@@ -149,8 +169,8 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
         accentColor,
         backgroundUrl: backgroundUrl || null,
         logoUrl: logoUrl || null,
-        authMicrosoft,
-        authOffline,
+        authMicrosoft: false,
+        authOffline: true,
         discordUrl: discordUrl || null,
         websiteUrl: websiteUrl || null
       });
@@ -166,17 +186,49 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
   const handleTriggerBuild = async () => {
     try {
       setBuilding(true);
-      toast.info(tr("Génération de l’exécutable launcher en cours..."));
       const res = await api.post<{ success: boolean; build: LauncherBuild }>(
         `/v2/instances/${instance.id}/launcher/build`,
-        { targetOs }
+        { targetOs, background: true }
       );
-      toast.success(tr("Build {0} généré avec succès !", { 0: res.build.version }));
-      loadBuilds();
+      setBuilds(current => [res.build, ...current.filter(build => build.id !== res.build.id)]);
+      await loadBuilds();
     } catch (err: any) {
       toast.error(err.message || tr("Erreur lors de la génération du launcher"));
     } finally {
       setBuilding(false);
+    }
+  };
+
+  const downloadBuild = async (id: string) => {
+    setDownloading(id);
+    try {
+      await api.download(`/v2/instances/${instance.id}/launcher/builds/${id}/download`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : tr("Téléchargement impossible"));
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const updateSharing = async (build: LauncherBuild) => {
+    setSharing(build.id);
+    try {
+      await api.put(`/v2/instances/${instance.id}/launcher/builds/${build.id}/share`, { shared: !build.shared_at });
+      await loadBuilds();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : tr("Erreur"));
+    } finally {
+      setSharing(null);
+    }
+  };
+
+  const copyPlayerPage = async () => {
+    const url = new URL(playerPage, window.location.origin).href;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(text('Lien joueur copié.', 'Player link copied.'));
+    } catch {
+      window.prompt(text('Copiez le lien joueur.', 'Copy the player link.'), url);
     }
   };
 
@@ -209,7 +261,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
 
         <button
           onClick={handleEnableLauncher}
-          disabled={loading}
+          disabled={loading || readOnly}
           className="mt-8 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl shadow-xs transition inline-flex items-center gap-2"
         >
           <Sparkles className="w-4 h-4" />
@@ -235,14 +287,14 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                 {tr("Actif")} </span>
             </div>
-            <p className="text-xs text-zinc-500 font-mono">{tr("Modèle :")} {template.toUpperCase()}</p>
+            <p className="text-xs text-zinc-500">{text('Connexion avec un pseudo', 'Sign in with a nickname')}</p>
           </div>
         </div>
 
         <div className="flex items-center space-x-2">
           <button
             onClick={handleDisableLauncher}
-            disabled={loading}
+            disabled={loading || readOnly}
             className="px-3 py-1.5 text-xs text-zinc-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
           >
             {tr("Désactiver")} </button>
@@ -311,7 +363,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                   <button
                     type="button"
                     onClick={() => logoInputRef.current?.click()}
-                    disabled={uploadingLogo}
+                    disabled={uploadingLogo || readOnly}
                     className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-300 transition flex items-center gap-1.5"
                   >
                     <Upload className="w-3.5 h-3.5" />
@@ -346,7 +398,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                   <button
                     type="button"
                     onClick={() => bgInputRef.current?.click()}
-                    disabled={uploadingBg}
+                    disabled={uploadingBg || readOnly}
                     className="px-3 py-1.5 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-300 transition flex items-center gap-1.5"
                   >
                     <Upload className="w-3.5 h-3.5" />
@@ -367,31 +419,11 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               </div>
             </div>
 
-            {/* Auth Providers */}
-            <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
-              <span className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                {tr("Fournisseurs d'authentification autorisés")} </span>
-              <div className="flex items-center space-x-4">
-                <label className="flex items-center space-x-2 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={authMicrosoft}
-                    onChange={e => setAuthMicrosoft(e.target.checked)}
-                    className="rounded text-indigo-600"
-                  />
-                  <span className="text-zinc-800 dark:text-zinc-200">{tr("Compte officiel Microsoft")}</span>
-                </label>
-                <label className="flex items-center space-x-2 text-xs cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={authOffline}
-                    onChange={e => setAuthOffline(e.target.checked)}
-                    className="rounded text-indigo-600"
-                  />
-                  <span className="text-zinc-800 dark:text-zinc-200">{tr("Mode Offline (Pseudonyme libre)")}</span>
-                </label>
-              </div>
-            </div>
+            {launcher?.auth_offline === false && (
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                {text('Enregistrez les réglages pour activer la connexion avec un pseudo.', 'Save the settings to enable nickname sign-in.')}
+              </p>
+            )}
 
             {/* Social Links */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
@@ -423,7 +455,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             <div className="flex justify-end pt-3">
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || readOnly}
                 className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 text-xs font-semibold rounded-lg shadow-xs transition"
               >
                 {loading ? tr("Enregistrement...") : tr("Enregistrer la configuration")}
@@ -482,7 +514,12 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
             </div>
 
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              {text('Génère un launcher autonome dédié à cette instance, avec son runtime et sa configuration.', 'Builds a standalone launcher for this instance, including its runtime and configuration.')}
+              {text('Le ZIP inclut le launcher et les réglages enregistrés ci-contre. Les joueurs reçoivent les fichiers du pack lors du lancement, à partir de la dernière version publiée.', 'The ZIP includes the launcher and the saved settings on this page. Players receive the latest published pack files when they launch the game.')}
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              {instance.active_release_id
+                ? text('La génération continue en arrière-plan. Suivez son état dans l’historique ci-dessous.', 'The build runs in the background. Follow its status in the history below.')
+                : text('Publiez la première version de l’instance pour pouvoir générer un launcher utilisable.', 'Publish the first release before building a playable launcher.')}
             </p>
 
             <div className="grid grid-cols-2 gap-2">
@@ -509,13 +546,13 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
 
             <button
               onClick={handleTriggerBuild}
-              disabled={building}
+              disabled={building || readOnly || !instance.active_release_id || launcher?.auth_offline === false || builds.some(build => build.target_os === targetOs && ['pending', 'building'].includes(build.status))}
               className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-60"
             >
               {building ? (
                 <>
                   <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
-                  <span>{tr("Génération en cours...")}</span>
+                  <span>{text('Mise en file…', 'Queuing…')}</span>
                 </>
               ) : (
                 <>
@@ -527,6 +564,23 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
           </div>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-3">
+        <h3 className="text-sm font-bold flex items-center gap-2"><Globe className="size-4 text-indigo-500" />
+          {text('Page de téléchargement des joueurs', 'Player download page')}
+        </h3>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          {text('Partagez un ZIP prêt depuis l’historique. Toute personne disposant du lien pourra le télécharger. Partager un nouveau ZIP remplace celui de la même plateforme.', 'Share a ready ZIP from the history below. Anyone with the link can download it. Sharing a new ZIP replaces the previous one for that platform.')}
+        </p>
+        {builds.some(build => build.shared_at) ? (
+          <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-indigo-600 dark:text-indigo-300">
+            <a href={playerPage} target="_blank" rel="noreferrer" className="inline-flex gap-1.5 items-center hover:underline">
+              <ExternalLink className="size-3.5" /> {text('Ouvrir la page joueur', 'Open player page')}
+            </a>
+            <button type="button" onClick={copyPlayerPage} className="hover:underline">{text('Copier le lien', 'Copy link')}</button>
+          </div>
+        ) : <p className="text-xs text-zinc-500">{text('Aucune archive partagée.', 'No shared archive.')}</p>}
+      </section>
 
       {/* Builds History Table */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-xs space-y-4">
@@ -545,6 +599,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
           </button>
         </div>
 
+        {historyError && <p role="alert" className="text-xs text-rose-600 dark:text-rose-300">{historyError}</p>}
         {builds.length === 0 ? (
           <div className="py-8 text-center text-xs text-zinc-400">
             {tr("Aucun build généré pour l'instant. Cliquez sur \"Générer le launcher\" ci-dessus pour produire votre premier exécutable.")} </div>
@@ -555,6 +610,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                 <tr>
                   <th className="py-2.5 px-3">{tr("Version")}</th>
                   <th className="py-2.5 px-3">{tr("Plateforme")}</th>
+                  <th className="py-2.5 px-3">{tr("Statut")}</th>
                   <th className="py-2.5 px-3">{tr("Taille")}</th>
                   <th className="py-2.5 px-3">{tr("Empreinte SHA-256")}</th>
                   <th className="py-2.5 px-3">{tr("Date")}</th>
@@ -572,23 +628,41 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                         {b.target_os}
                       </span>
                     </td>
-                    <td className="py-3 px-3 font-mono text-zinc-600 dark:text-zinc-400">
-                      {formatBytes(b.artifact_size)}
+                    <td className="py-3 px-3" aria-live="polite">
+                      {b.status === 'pending' && text('En file', 'Queued')}
+                      {b.status === 'building' && (b.stage ? buildStages[b.stage] : text('En cours', 'Building'))}
+                      {b.status === 'completed' && text('Prêt', 'Ready')}
+                      {b.status === 'failed' && <span className="text-rose-600 dark:text-rose-300">{text('Échec', 'Failed')}{b.error_message && ` · ${translateApiMessage(b.error_message)}`}</span>}
                     </td>
-                    <td className="py-3 px-3 font-mono text-[10px] text-zinc-400 truncate max-w-xs" title={b.sha256}>
-                      {b.sha256 ? `${b.sha256.substring(0, 16)}...` : '-'}
+                    <td className="py-3 px-3 font-mono text-zinc-600 dark:text-zinc-400">
+                      {b.status === 'completed' ? formatBytes(b.artifact_size) : '—'}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-[10px] text-zinc-400 truncate max-w-xs" title={b.artifact_sha256}>
+                      {b.artifact_sha256 ? `${b.artifact_sha256.substring(0, 16)}...` : '—'}
                     </td>
                     <td className="py-3 px-3 text-zinc-500 text-[11px]">
                       {new Date(b.created_at).toLocaleString(locale())}
                     </td>
-                    <td className="py-3 px-3 text-right">
-                      <button
+                    <td className="py-3 px-3">
+                      <div className="flex flex-wrap gap-2 justify-end">
+                      {b.status === 'completed' && <button
                         type="button"
-                        onClick={() => api.download(`/v2/instances/${instance.id}/launcher/builds/${b.id}/download`).catch(error => toast.error(error.message))}
+                        disabled={downloading !== null}
+                        onClick={() => downloadBuild(b.id)}
                         className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold text-xs transition shadow-2xs"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        {tr("Télécharger")} </button>
+                        {downloading === b.id ? text('Téléchargement…', 'Downloading…') : tr("Télécharger")} </button>}
+                        {b.status === 'completed' && b.instance_id && canShare && (
+                          <button type="button" disabled={sharing !== null || (!instance.active_release_id && !b.shared_at)}
+                            onClick={() => updateSharing(b)}
+                            className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-2 py-1 font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">
+                            {b.shared_at ? text('Retirer le partage', 'Unshare') : text('Partager', 'Share')}
+                          </button>
+                        )}
+                        {b.status === 'completed' && !b.instance_id && canShare &&
+                          <span className="text-zinc-500">{text('À régénérer pour partager', 'Rebuild to share')}</span>}
+                      </div>
                     </td>
                   </tr>
                 ))}

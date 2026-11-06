@@ -17,9 +17,15 @@ Administrative routes require a session cookie (`packpanel_session`) or `Authori
 | POST | `/api/v2/instances/:id/launcher/disable` | Disable the dedicated launcher |
 | PUT | `/api/v2/instances/:id/launcher` | Save branding/configuration |
 | POST | `/api/v2/instances/:id/launcher/media` | Upload an image |
-| POST | `/api/v2/instances/:id/launcher/build` | Build a downloadable runtime |
+| POST | `/api/v2/instances/:id/launcher/build` | Send `background: true` to queue a build and receive HTTP 202 with its ID. Poll the build history and download after completion. The synchronous call remains available for existing clients. |
 | GET | `/api/v2/instances/:id/launcher/builds` | Build history |
 | GET | `/api/v2/instances/:id/launcher/builds/:buildId/download` | Download an authenticated archive |
+| PUT | `/api/v2/instances/:id/launcher/builds/:buildId/share` | Set `{ "shared": true }` to expose a completed build on the player page or `false` to revoke it. Sharing a build replaces the public build for the same platform. |
+
+Players can open `/play/:slug` on the files domain without a session. The public `GET /play-api/:slug`
+returns the active release, its notes and shared builds. The download URLs
+support single byte ranges and return 404 when a build is no longer shared.
+The authenticated publish route accepts an optional `notes` string up to 2,000 characters.
 
 Operators need the associated endpoint's write or publish permission for the corresponding action. Viewers cannot mutate instances. Administrators manage accounts and permissions. Deleting an instance record is not a filesystem purge of its separately managed endpoint; remove or withdraw the distribution separately when retiring a pack.
 

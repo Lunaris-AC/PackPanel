@@ -42,16 +42,32 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [twoFactorModalOpen, setTwoFactorModalOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    // SSE Live Connection
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource('/api/events', { withCredentials: true });
-      es.onopen = () => setSseConnected(true);
-      es.onerror = () => setSseConnected(false);
-      es.addEventListener('heartbeat', () => setSseConnected(true));
-    } catch (e) {
-      setSseConnected(false);
-    }
+    const controller = new AbortController();
+    let retry: number | undefined;
+    const connect = async () => {
+      try {
+        const token = localStorage.getItem('packpanel_token');
+        const response = await fetch('/api/events', {
+          credentials: 'include',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal
+        });
+        if (!response.ok || !response.body) return;
+        setSseConnected(true);
+        const reader = response.body.getReader();
+        while (!(await reader.read()).done) {
+          // The panel uses the connection state. It does not consume event payloads.
+        }
+      } catch {
+        // Reconnect when the stream closes or the network changes.
+      } finally {
+        if (!controller.signal.aborted) {
+          setSseConnected(false);
+          retry = window.setTimeout(connect, 5000);
+        }
+      }
+    };
+    void connect();
 
     // Auto-prompt setup wizard if admin and first visit
     const setupCompleted = localStorage.getItem('packpanel_setup_completed');
@@ -60,7 +76,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     }
 
     return () => {
-      if (es) es.close();
+      controller.abort();
+      window.clearTimeout(retry);
     };
   }, [user]);
 
@@ -244,13 +261,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       <SetupWizard
         isOpen={setupWizardOpen}
         onClose={() => setSetupWizardOpen(false)}
-        onComplete={(slug) => {
-          if (slug) {
-            navigate('/instances');
-          } else {
-            window.location.reload();
-          }
-        }}
+        onComplete={draft => draft ? navigate('/instances/new', { state: draft }) : navigate('/instances')}
       />
 
       {/* Two-Factor Authentication Modal */}

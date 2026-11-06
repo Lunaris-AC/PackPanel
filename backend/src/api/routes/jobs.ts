@@ -22,7 +22,7 @@ export async function jobRoutes(fastify: FastifyInstance) {
     }
 
     q += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
-    params.push(Math.min(Number(limit) || 50, 100));
+    params.push(Math.max(1, Math.min(Math.trunc(Number(limit)) || 50, 100)));
 
     const res = await query(q, params);
     return reply.send({ jobs: res.rows });
@@ -31,7 +31,7 @@ export async function jobRoutes(fastify: FastifyInstance) {
   // Get job details
   fastify.get('/jobs/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const res = await query('SELECT * FROM jobs WHERE id = $1', [id]);
+    const res = await query('SELECT * FROM jobs WHERE id::text = $1', [id]);
 
     if (res.rows.length === 0) {
       return reply.status(404).send({ error: 'Tâche introuvable' });
@@ -46,10 +46,15 @@ export async function jobRoutes(fastify: FastifyInstance) {
   }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const res = await query(
-      `UPDATE jobs
-       SET status = 'cancelled', completed_at = NOW(), error_message = 'Annulé manuellement par utilisateur'
-       WHERE id = $1 AND status = 'pending'
-       RETURNING id`,
+      `WITH cancelled AS (
+         UPDATE jobs SET status = 'cancelled', completed_at = NOW(), error_message = 'Annulé manuellement par utilisateur'
+         WHERE id::text = $1 AND status = 'pending'
+         RETURNING id, job_type, payload, error_message
+       ), update_build AS (
+         UPDATE launcher_builds b SET status = 'failed', completed_at = NOW(), error_message = c.error_message
+         FROM cancelled c WHERE c.job_type = 'build_launcher' AND b.id::text = c.payload->>'buildId'
+       )
+       SELECT id FROM cancelled`,
       [id]
     );
 

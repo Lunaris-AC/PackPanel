@@ -1,5 +1,6 @@
 import { formatBytes, locale } from '../i18n/format';
 import { useTranslation } from '../i18n';
+import { translateApiMessage } from '../i18n/text';
 import React, { useEffect, useState, useRef } from 'react';
 import {
   Folder,
@@ -22,7 +23,8 @@ import {
   ArrowRight,
   FileCode,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  FileArchive
 } from 'lucide-react';
 import { api } from '../api/client';
 import { ExplorerItem, Release, FileHistoryItem } from '../types';
@@ -32,15 +34,20 @@ import { Modal } from '../components/Modal';
 
 interface ExplorerPageProps {
   endpointId: string;
+  onDraftChange?: () => void;
+  canWrite?: boolean;
 }
 
 
 
-export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
-  const { tr } = useTranslation();
+export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftChange, canWrite }) => {
+  const { tr, language } = useTranslation();
+  const text = (fr: string, en: string) => language === 'fr' ? fr : en;
   const { user } = useAuth();
   const { toast } = useToast();
-  const canEdit = user?.role === 'admin' || user?.role === 'operator';
+  const canEdit = canWrite ?? (user?.role === 'admin' || user?.role === 'operator');
+  const draft = Boolean(onDraftChange);
+  const draftQuery = draft ? '?draft=true' : '';
 
   const [currentPrefix, setCurrentPrefix] = useState<string>('');
   const [search, setSearch] = useState<string>('');
@@ -57,6 +64,9 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
   // Hidden file inputs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+  const zipPoll = useRef<AbortController | null>(null);
+  useEffect(() => () => zipPoll.current?.abort(), []);
 
   // File Viewer / Editor Modal
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -89,7 +99,8 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
         items: ExplorerItem[];
       }>(`/endpoints/${endpointId}/explorer`, {
         prefix,
-        search: searchQuery
+        search: searchQuery,
+        draft: draft || undefined
       });
 
       setItems(res.items || []);
@@ -120,20 +131,20 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
   // Read File Entry recursively for dropped folders
   const readEntryRecursive = async (entry: any, basePath = ''): Promise<Array<{ path: string; file: File }>> => {
     if (entry.isFile) {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         entry.file((file: File) => {
           resolve([{ path: basePath + file.name, file }]);
-        });
+        }, reject);
       });
     } else if (entry.isDirectory) {
       const dirReader = entry.createReader();
-      const entries: any[] = await new Promise((resolve) => {
-        dirReader.readEntries((results: any[]) => resolve(results));
-      });
       const subFiles: Array<{ path: string; file: File }> = [];
-      for (const sub of entries) {
-        const res = await readEntryRecursive(sub, `${basePath}${entry.name}/`);
-        subFiles.push(...res);
+      while (true) {
+        const entries = await new Promise<any[]>((resolve, reject) => dirReader.readEntries(resolve, reject));
+        if (!entries.length) break;
+        for (const sub of entries) {
+          subFiles.push(...await readEntryRecursive(sub, `${basePath}${entry.name}/`));
+        }
       }
       return subFiles;
     }
@@ -150,38 +161,85 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
   };
 
   const processAndUploadFiles = async (fileList: Array<{ path: string; file: File }>) => {
-    if (!fileList.length) return;
+    if (!fileList.length || isUploading) return;
+    const maxBatchBytes = 48 * 1024 * 1024;
+    if (fileList.some(item => item.file.size > maxBatchBytes)) {
+      toast.error(text('Pour envoyer un fichier de plus de 48 Mio, placez-le dans une archive ZIP.', 'To upload a file larger than 48 MiB, put it in a ZIP archive.'));
+      return;
+    }
     setIsUploading(true);
     setUploadStatusText(tr("Préparation de {0} fichier(s)...", { 0: fileList.length }));
 
     try {
-      // Process in batches of 30 to avoid payload limits
-      const BATCH_SIZE = 30;
-      for (let i = 0; i < fileList.length; i += BATCH_SIZE) {
-        const chunk = fileList.slice(i, i + BATCH_SIZE);
-        setUploadStatusText(tr("Téléversement des fichiers ({0}/{1})...", { 0: Math.min(i + BATCH_SIZE, fileList.length), 1: fileList.length }));
-
+      let index = 0;
+      while (index < fileList.length) {
         const payloadFiles: Array<{ path: string; contentBase64: string }> = [];
-        for (const item of chunk) {
+        let batchBytes = 0;
+        while (index < fileList.length && payloadFiles.length < 30) {
+          const item = fileList[index];
+          if (payloadFiles.length && batchBytes + item.file.size > maxBatchBytes) break;
+          batchBytes += item.file.size;
+          index++;
           const b64 = await fileToBase64(item.file);
           payloadFiles.push({
             path: item.path,
             contentBase64: b64
           });
         }
+        setUploadStatusText(tr("Téléversement des fichiers ({0}/{1})...", { 0: index, 1: fileList.length }));
 
-        await api.post(`/endpoints/${endpointId}/explorer/upload-batch`, {
+        await api.post(`/endpoints/${endpointId}/explorer/upload-batch${draftQuery}`, {
           files: payloadFiles
         });
       }
 
-      toast.success(tr("{0} fichier(s) téléversé(s) et nouvelle version publiée !", { 0: fileList.length }));
-      await loadDirectory(currentPrefix, search);
+      toast.success(tr(draft ? "{0} fichier(s) ajoutés au brouillon." : "{0} fichier(s) téléversé(s).", { 0: fileList.length }));
     } catch (err: any) {
       toast.error(err.message || tr("Erreur lors du téléversement"));
     } finally {
+      onDraftChange?.();
+      void loadDirectory(currentPrefix, search);
       setIsUploading(false);
       setUploadStatusText('');
+    }
+  };
+
+  const importZip = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file || isUploading) return;
+    const controller = new AbortController();
+    zipPoll.current = controller;
+    setIsUploading(true);
+    setUploadStatusText(text('Téléversement de l’archive…', 'Uploading archive…'));
+    const body = new FormData();
+    body.set('file', file);
+    try {
+      const { sessionId } = await api.post<{ sessionId: string }>(`/endpoints/${endpointId}/uploads/zip?draft=true`, body);
+      if (controller.signal.aborted) return;
+      setUploadStatusText(text('Extraction et vérification du ZIP…', 'Extracting and checking the ZIP…'));
+      for (let attempt = 0; attempt < 90 && !controller.signal.aborted; attempt++) {
+        const { session } = await api.get<{ session: { status: string; error_message?: string } }>(`/endpoints/${endpointId}/uploads/sessions/${sessionId}`);
+        if (controller.signal.aborted) return;
+        if (session.status === 'completed') {
+          toast.success(text('Archive ajoutée au brouillon.', 'Archive added to the draft.'));
+          return;
+        }
+        if (session.status === 'failed' || session.status === 'cancelled') throw new Error(
+          session.error_message ? translateApiMessage(session.error_message) : text('Échec de l’import ZIP.', 'ZIP import failed.'));
+        await new Promise(resolve => window.setTimeout(resolve, 2000));
+      }
+      if (!controller.signal.aborted) toast.info(text('Le ZIP est encore en cours de traitement. Suivez-le dans Tâches.', 'The ZIP is still processing. Follow it in Background tasks.'));
+    } catch (error) {
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : text('Échec de l’import ZIP.', 'ZIP import failed.'));
+    } finally {
+      if (!controller.signal.aborted) {
+        zipPoll.current = null;
+        setIsUploading(false);
+        setUploadStatusText('');
+        onDraftChange?.();
+        void loadDirectory();
+      }
     }
   };
 
@@ -212,34 +270,33 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
     e.stopPropagation();
     setIsDraggingOver(false);
     dragCounter.current = 0;
-    if (!canEdit) return;
+    if (!canEdit || isUploading) return;
 
     const items = e.dataTransfer.items;
     const collectedFiles: Array<{ path: string; file: File }> = [];
 
-    if (items && items.length > 0) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.webkitGetAsEntry) {
-          const entry = item.webkitGetAsEntry();
+    try {
+      if (items && items.length > 0) {
+        // Capture entries synchronously. The browser restricts access to dataTransfer after the drop callback returns.
+        const entries = Array.from(items).map(item => ({
+          entry: item.webkitGetAsEntry?.(),
+          file: item.getAsFile()
+        }));
+        for (const { entry, file } of entries) {
           if (entry) {
-            const files = await readEntryRecursive(entry, currentPrefix);
-            collectedFiles.push(...files);
+            collectedFiles.push(...await readEntryRecursive(entry, currentPrefix));
+          } else if (file) {
+            collectedFiles.push({ path: currentPrefix + file.name, file });
           }
-        } else {
-          const f = item.getAsFile();
-          if (f) collectedFiles.push({ path: currentPrefix + f.name, file: f });
+        }
+      } else {
+        for (const file of Array.from(e.dataTransfer.files)) {
+          collectedFiles.push({ path: currentPrefix + file.name, file });
         }
       }
-    } else if (e.dataTransfer.files) {
-      for (let i = 0; i < e.dataTransfer.files.length; i++) {
-        const f = e.dataTransfer.files[i];
-        collectedFiles.push({ path: currentPrefix + f.name, file: f });
-      }
-    }
-
-    if (collectedFiles.length > 0) {
       await processAndUploadFiles(collectedFiles);
+    } catch {
+      toast.error(text('Impossible de lire les fichiers déposés.', 'Could not read the dropped files.'));
     }
   };
 
@@ -287,7 +344,8 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
         size: number;
         sha1: string;
       }>(`/endpoints/${endpointId}/explorer/content`, {
-        path: item.path
+        path: item.path,
+        releaseId: release?.id
       });
 
       if (res.isText) {
@@ -310,12 +368,13 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
   const handleSaveFile = async () => {
     setSavingFile(true);
     try {
-      await api.post(`/endpoints/${endpointId}/explorer/save-file`, {
+      await api.post(`/endpoints/${endpointId}/explorer/save-file${draftQuery}`, {
         path: activeFilePath,
         content: fileContent,
         commitNow: true
       });
-      toast.success(tr("Fichier modifié et nouvelle version publiée !"));
+      toast.success(tr(draft ? "Fichier enregistré dans le brouillon." : "Fichier modifié et nouvelle version publiée !"));
+      onDraftChange?.();
       setViewerOpen(false);
       loadDirectory(currentPrefix, search);
     } catch (e: any) {
@@ -341,17 +400,18 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
 
   const handleDeleteItem = async (item: ExplorerItem) => {
     const isDir = item.isDir;
-    const msg = isDir
+    const msg = draft ? tr('Retirer « {0} » du brouillon ?', { 0: item.name }) : isDir
       ? tr("Supprimer définitivement le dossier \"{0}/\" et tous ses fichiers ? Une nouvelle version sera créée.", { 0: item.name })
       : tr("Supprimer définitivement le fichier \"{0}\" ? Une nouvelle version sera créée.", { 0: item.name });
 
     if (!window.confirm(msg)) return;
 
     try {
-      await api.post(`/endpoints/${endpointId}/explorer/delete`, {
+      await api.post(`/endpoints/${endpointId}/explorer/delete${draftQuery}`, {
         path: item.path
       });
-      toast.success(tr("Élément supprimé et version mise à jour"));
+      toast.success(tr(draft ? "Suppression enregistrée dans le brouillon." : "Élément supprimé et version mise à jour"));
+      onDraftChange?.();
       loadDirectory(currentPrefix, search);
     } catch (e: any) {
       toast.error(e.message || tr("Erreur suppression"));
@@ -362,9 +422,10 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
     setUndoingId(historyId);
     try {
       const res = await api.post<{ success: boolean; message: string }>(
-        `/endpoints/${endpointId}/explorer/undo/${historyId}`
+        `/endpoints/${endpointId}/explorer/undo/${historyId}${draftQuery}`
       );
       toast.success(res.message || tr("Modification annulée !"));
+      onDraftChange?.();
       await loadHistory();
       await loadDirectory(currentPrefix, search);
     } catch (err: any) {
@@ -392,6 +453,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
         multiple
         className="hidden"
       />
+      {draft && <input type="file" ref={zipInputRef} accept=".zip,application/zip" onChange={importZip} className="hidden" />}
       <input
         type="file"
         ref={folderInputRef}
@@ -408,7 +470,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
           <h3 className="text-lg font-bold text-white tracking-tight">
             {tr("Déposez vos fichiers ou dossiers ici")} </h3>
           <p className="text-xs text-zinc-300 mt-1 max-w-md">
-            {tr("Ils seront automatiquement ingérés dans le Content-Addressed Storage et publiés dans une nouvelle version atomique.")} </p>
+            {tr(draft ? "Les fichiers seront ajoutés au brouillon." : "Ils seront automatiquement ingérés dans le Content-Addressed Storage et publiés dans une nouvelle version atomique.")} </p>
         </div>
       )}
 
@@ -419,9 +481,12 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
             <div className="animate-spin rounded-full h-4 w-4 border-2 border-sky-500 border-t-transparent" />
             <span className="font-semibold">{uploadStatusText}</span>
           </div>
-          <span className="text-[11px] font-mono opacity-80">{tr("Publication automatique...")}</span>
         </div>
       )}
+
+      {draft && <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        {tr("Les modifications de fichiers restent en brouillon jusqu’à la publication de l’instance.")}
+      </p>}
 
       {/* Top Toolbar */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-white dark:bg-zinc-900 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-2xs">
@@ -478,6 +543,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
               {/* Add Files */}
               <button
                 onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
                 className="px-2.5 py-1.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-lg flex items-center space-x-1.5 transition"
                 title={tr("Ajouter des fichiers")}
               >
@@ -488,12 +554,17 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
               {/* Add Folder */}
               <button
                 onClick={() => folderInputRef.current?.click()}
+                disabled={isUploading}
                 className="px-2.5 py-1.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-lg flex items-center space-x-1.5 transition"
                 title={tr("Ajouter un dossier complet")}
               >
                 <FolderPlus className="w-3.5 h-3.5" />
                 <span>{tr("Dossier")}</span>
               </button>
+              {draft && <button type="button" onClick={() => zipInputRef.current?.click()} disabled={isUploading}
+                className="px-2.5 py-1.5 text-xs font-medium bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-lg flex items-center gap-1.5 disabled:opacity-60">
+                <FileArchive className="size-3.5" /> {text('Importer un ZIP', 'Import ZIP')}
+              </button>}
 
               {/* New Text File */}
               <button
@@ -536,7 +607,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
             <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
               {tr("Aucun fichier dans cet endpoint")} </h3>
             <p className="text-xs text-zinc-400 mt-1 max-w-sm mx-auto">
-              {tr("Glissez-déposez vos mods, configurations ou dossiers complets ici pour publier la première version.")} </p>
+              {tr(draft ? "Glissez-déposez vos mods, fichiers de configuration ou dossiers ici pour préparer la première version." : "Glissez-déposez vos mods, configurations ou dossiers complets ici pour publier la première version.")} </p>
             {canEdit && (
               <div className="mt-4 flex items-center justify-center space-x-2">
                 <button
@@ -817,14 +888,14 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId }) => {
             {isEditing && (
               <div className="flex items-center justify-between pt-2">
                 <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {tr("L'enregistrement publiera immédiatement une nouvelle version atomique et l'enregistrera dans l'historique des modifications.")} </p>
+                  {tr(draft ? "L’enregistrement met à jour le brouillon et l’historique des modifications." : "L'enregistrement publiera immédiatement une nouvelle version atomique et l'enregistrera dans l'historique des modifications.")} </p>
                 <button
                   onClick={handleSaveFile}
                   disabled={savingFile}
                   className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs rounded-xl shadow-2xs flex items-center space-x-1.5 disabled:opacity-60 transition"
                 >
                   <Save className="w-4 h-4" />
-                  <span>{savingFile ? tr("Enregistrement...") : tr("Enregistrer & Publier")}</span>
+                  <span>{savingFile ? tr("Enregistrement...") : tr(draft ? "Enregistrer le brouillon" : "Enregistrer & Publier")}</span>
                 </button>
               </div>
             )}

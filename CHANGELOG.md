@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-06
+
+- Added a bilingual player download page on the public files origin, with explicit sharing and revocation per platform, resumable ZIP downloads and release notes.
+- Moved launcher generation to a background worker and exposed build stages and errors in the panel.
+- Added pack preparation, repair, optional files and persistent local diagnostics to the desktop launcher.
+- Separated file drafts from published releases and added ZIP import to the instance file explorer.
+- Scoped launcher project mutations to authorized operators and restricted automatic ZIP publication to publishers.
+- Moved HTTPS browser sessions to HttpOnly cookies and extended installer checks to the public player portal.
+
 ## 2.0.0 — 2026-10-04
 
 - Restored instance creation with official Fabric, Forge, NeoForge and Quilt compatibility/version resolution; corrected Java requirements and catalog response fields.

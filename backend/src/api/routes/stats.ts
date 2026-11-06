@@ -52,6 +52,7 @@ export async function statsRoutes(fastify: FastifyInstance) {
     // 7. Recent endpoints summary
     const recentEndpointsRes = await query(`
       SELECT e.id, e.slug, e.name, e.updated_at,
+        (SELECT i.id FROM instances i WHERE i.endpoint_id = e.id ORDER BY i.created_at, i.id LIMIT 1) AS instance_id,
         r.release_id as active_release_id,
         r.version_num as active_version_num,
         r.total_files as active_total_files,

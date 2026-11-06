@@ -106,6 +106,7 @@ export async function versionRoutes(fastify: FastifyInstance) {
     }
 
     const targetRelease = relRes.rows[0];
+    if (targetRelease.status === 'draft') return reply.status(409).send({ error: 'Publiez le brouillon depuis l’instance.' });
     const releaseDir = path.join(ENDPOINTS_DIR, endpointSlug, 'releases', targetRelease.release_id);
 
     const manifestJson = typeof targetRelease.manifest_content === 'string'

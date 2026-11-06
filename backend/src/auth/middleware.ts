@@ -133,6 +133,35 @@ export function requireInstancePermission(permission: 'can_write' | 'can_publish
   };
 }
 
+export async function canManageLauncherInstances(
+  user: UserSession,
+  projectId: string | null,
+  requestedIds: string[] = [],
+  execute: typeof query = query
+): Promise<boolean> {
+  if (user.role === 'admin') return true;
+  const result = await execute(
+    `WITH linked AS (
+       SELECT i.id FROM instances i WHERE i.launcher_project_id = $1
+       UNION
+       SELECT lpi.instance_id FROM launcher_project_instances lpi WHERE lpi.launcher_project_id = $1
+     ), requested AS (
+       SELECT id FROM linked UNION SELECT unnest($2::uuid[])
+     )
+     SELECT NOT EXISTS (
+       SELECT 1 FROM requested r
+       LEFT JOIN instances i ON i.id = r.id
+       LEFT JOIN user_endpoint_permissions p ON p.endpoint_id = i.endpoint_id AND p.user_id = $3
+       WHERE p.can_write IS DISTINCT FROM TRUE
+     ) AND (
+       $1::uuid IS NULL OR EXISTS (SELECT 1 FROM linked)
+       OR EXISTS (SELECT 1 FROM launcher_projects WHERE id = $1 AND created_by_user_id = $3)
+     ) AS allowed`,
+    [projectId, requestedIds, user.userId]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
 export async function recordAuditLog(
   userId: string | null,
   action: string,

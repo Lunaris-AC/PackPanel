@@ -24,6 +24,8 @@ Remplacez les domaines par les vôtres. Vous pouvez aussi télécharger le ZIP d
 
 L'installateur génère les identifiants et affiche une fois le mot de passe administrateur initial. Conservez-le puis terminez l'assistant de configuration. Les ports par défaut sont **8080** pour le panel/API et **8081** pour les fichiers publics ; les données sont dans `/srv/packpanel`. Configurez HTTPS et vos domaines selon le [guide du reverse proxy](docs/ZORAXY_CLOUDFLARE.md). Les adresses publiques sont enregistrées par l'assistant. Une URL HTTP explicite est possible pour un test en réseau local.
 
+Le lien joueur `/play/<slug>` est servi par le domaine de distribution, avec les ZIP que vous choisissez de partager depuis le panneau.
+
 Pour mettre à jour une installation Git :
 
 ```sh

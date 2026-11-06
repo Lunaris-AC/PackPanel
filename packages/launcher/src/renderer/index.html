@@ -66,22 +66,48 @@
             <button id="stop" class="secondary" hidden><span class="stop-square"></span><span data-i18n="stop">Arrêter</span></button>
           </div>
           <p id="device" hidden></p>
+          <button id="troubleshoot" type="button" class="text-action" data-i18n="openDiagnostics" hidden>Ouvrir le journal</button>
           <p class="sync-note"><svg><use href="#i-check"/></svg><span data-i18n="syncNote">Votre jeu se met à jour automatiquement avant chaque lancement.</span></p>
         </div>
+        <section class="pack-card" aria-labelledby="pack-heading">
+          <div class="pack-header">
+            <div>
+              <h2 id="pack-heading" data-i18n="packTitle">Votre pack</h2>
+              <p id="pack-state" role="status"></p>
+              <p id="pack-version"></p>
+            </div>
+            <div class="pack-actions">
+              <button id="check-pack" class="text-action" type="button" data-i18n="checkPack">Rechercher une mise à jour</button>
+              <button id="prepare-pack" class="secondary" type="button" disabled>Préparer le pack</button>
+            </div>
+          </div>
+          <div id="pack-server" class="pack-server" hidden><code id="pack-address"></code><button id="copy-server" class="text-action" type="button" data-i18n="copyAddress">Copier l’adresse</button></div>
+          <details id="release-details" hidden><summary data-i18n="releaseNotes">Notes de version</summary><p id="pack-notes"></p></details>
+          <details id="optional-details" hidden>
+            <summary data-i18n="optionalTitle">Fichiers facultatifs</summary>
+            <p class="hint" data-i18n="optionalHint">Vos choix s’appliqueront lors de la prochaine préparation ou du prochain lancement.</p>
+            <fieldset id="optional-files"></fieldset>
+          </details>
+        </section>
       </section>
       <section id="settings-panel" hidden>
         <div class="page-heading"><span class="eyebrow" data-i18n="makeItYours">À VOTRE FAÇON</span><h1 data-i18n="settings">Paramètres</h1><p data-i18n="settingsDescription">Les bons réglages, pour votre façon de jouer.</p></div>
         <form id="settings-form">
           <div class="setting-card memory-card">
             <div class="setting-title"><div><h2 data-i18n="memoryTitle">Mémoire du jeu</h2><p data-i18n="memoryDescription">Donnez à votre monde la place dont il a besoin.</p></div><span class="memory-value" id="memory-value">4 <small>Go</small></span></div>
-            <div class="memory-controls"><input id="ram-range" type="range" min="1024" max="65536" step="256" value="4096" data-i18n-title="memoryTitle"><div class="memory-input"><input id="ram" type="number" min="1024" max="65536" step="256" value="4096" required><label for="ram" data-i18n="megabytes">Mo</label></div></div>
+            <div class="memory-controls"><input id="ram-range" type="range" min="1024" max="65536" step="256" value="4096" data-i18n-title="memoryTitle"><div class="memory-input"><input id="ram" type="number" min="1024" max="65536" step="1" value="4096" required><label for="ram" data-i18n="megabytes">Mo</label></div></div>
             <p class="hint" id="memory-hint"></p>
           </div>
           <div class="setting-card"><label for="jvm-args" class="setting-label" data-i18n="argumentsTitle">Arguments JVM supplémentaires</label><p class="hint" data-i18n="argumentsDescription">Ils s’ajoutent aux réglages de l’instance. La mémoire se règle ci-dessus.</p><textarea id="jvm-args" rows="2" maxlength="8192" placeholder="-Dfile.encoding=UTF-8" spellcheck="false"></textarea></div>
           <div class="settings-actions"><span id="settings-status" role="status"></span><button id="save-settings" type="submit"><svg><use href="#i-check"/></svg><span data-i18n="save">Enregistrer</span></button></div>
         </form>
         <button id="open-folder" class="folder-card" type="button"><span class="folder-icon"><svg><use href="#i-folder"/></svg></span><span><strong data-i18n="filesTitle">Les fichiers de votre jeu</strong><small data-i18n="filesDescription">Mods, captures d’écran et sauvegardes : tout est ici.</small></span><svg class="folder-arrow"><use href="#i-arrow"/></svg></button>
-        <details class="logs-card"><summary><svg><use href="#i-terminal"/></svg><span data-i18n="logs">Journal du jeu</span><span class="summary-plus">+</span></summary><pre id="logs"></pre></details>
+        <details class="logs-card" id="logs-card">
+          <summary><svg><use href="#i-terminal"/></svg><span data-i18n="logs">Journal du jeu</span><span class="summary-plus">+</span></summary>
+          <div class="log-actions"><button type="button" id="copy-log" class="text-action" data-i18n="copyLog">Copier le diagnostic</button><span id="log-copy-status" role="status"></span></div>
+          <p class="hint" data-i18n="logPrivacy">Relisez le journal avant de le transmettre. Il peut contenir des messages de jeu.</p>
+          <pre id="logs"></pre>
+        </details>
       </section>
     </main>
   </div>

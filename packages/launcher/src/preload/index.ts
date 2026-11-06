@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { AuthProfile, EngineProgressEvent, LauncherConfigV2 } from '@packpanel/protocol';
+import type { PackStatus, PackSummary } from '../main/player-state';
 
 export interface PackPanelApi {
   getWindowState: () => Promise<{ maximized: boolean }>;
@@ -9,6 +10,12 @@ export interface PackPanelApi {
   saveSettings: (settings: { ramMb: number; customJvmArgs: string }) => Promise<{ ramMb: number; customJvmArgs: string }>;
   openGameDirectory: () => Promise<void>;
   getConfig: () => Promise<LauncherConfigV2>;
+  getPackStatus: () => Promise<PackStatus>;
+  setOptionalFile: (choice: { path: string; enabled: boolean }) => Promise<void>;
+  prepareInstance: () => Promise<void>;
+  getLastLog: () => Promise<string>;
+  copyDiagnostics: () => Promise<boolean>;
+  copyServerAddress: (value: string) => Promise<void>;
   loginOffline: (username: string) => Promise<AuthProfile>;
   startMicrosoftLogin: () => Promise<{ userCode: string; verificationUri: string; expiresIn: number }>;
   completeMicrosoftLogin: () => Promise<AuthProfile>;
@@ -19,6 +26,7 @@ export interface PackPanelApi {
   }) => Promise<void>;
   stopInstance: () => Promise<void>;
   onProgress: (callback: (event: EngineProgressEvent) => void) => () => void;
+  onPackReady: (callback: (pack: PackSummary) => void) => () => void;
   onLog: (callback: (logLine: string) => void) => () => void;
   onCrash: (callback: (crashData: { exitCode: number; crashReport?: string }) => void) => () => void;
 }
@@ -35,6 +43,12 @@ const api: PackPanelApi = {
   saveSettings: settings => ipcRenderer.invoke('launcher:saveSettings', settings),
   openGameDirectory: () => ipcRenderer.invoke('launcher:openGameDirectory'),
   getConfig: () => ipcRenderer.invoke('launcher:getConfig'),
+  getPackStatus: () => ipcRenderer.invoke('launcher:getPackStatus'),
+  setOptionalFile: choice => ipcRenderer.invoke('launcher:setOptionalFile', choice),
+  prepareInstance: () => ipcRenderer.invoke('launcher:prepareInstance'),
+  getLastLog: () => ipcRenderer.invoke('launcher:getLastLog'),
+  copyDiagnostics: () => ipcRenderer.invoke('launcher:copyDiagnostics'),
+  copyServerAddress: value => ipcRenderer.invoke('launcher:copyServerAddress', value),
   loginOffline: (username: string) => ipcRenderer.invoke('launcher:loginOffline', username),
   startMicrosoftLogin: () => ipcRenderer.invoke('launcher:startMicrosoftLogin'),
   completeMicrosoftLogin: () => ipcRenderer.invoke('launcher:completeMicrosoftLogin'),
@@ -44,6 +58,11 @@ const api: PackPanelApi = {
     const subscription = (_event: any, value: EngineProgressEvent) => callback(value);
     ipcRenderer.on('launcher:progress', subscription);
     return () => ipcRenderer.removeListener('launcher:progress', subscription);
+  },
+  onPackReady: callback => {
+    const subscription = (_event: unknown, value: PackSummary) => callback(value);
+    ipcRenderer.on('launcher:packReady', subscription);
+    return () => ipcRenderer.removeListener('launcher:packReady', subscription);
   },
   onLog: (callback) => {
     const subscription = (_event: any, value: string) => callback(value);

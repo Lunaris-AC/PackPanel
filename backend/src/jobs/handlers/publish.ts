@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { query, withTransaction } from '../../db';
-import { config, ENDPOINTS_DIR, getFilesBaseUrl } from '../../config';
+import { ENDPOINTS_DIR, getFilesBaseUrl } from '../../config';
 import { linkObjectToRelease } from '../../storage/cas';
 import { buildMineLaunchedManifest, validateMineLaunchedContract, FileRecordInput } from '../../storage/manifest';
 import { writeV2ManifestToEndpoint } from '../../api/routes/instances';
@@ -10,11 +10,23 @@ import { writeV2ManifestToEndpoint } from '../../api/routes/instances';
 export interface SealAndBuildReleasePayload {
   sessionId: string;
   immediatePublish?: boolean;
+  allowEmptySnapshot?: boolean;
+  releaseNotes?: string;
 }
 
 export interface PublishReleasePayload {
   releaseId: string;
   endpointId: string;
+  releaseNotes?: string;
+}
+
+export async function getWorkingRelease(endpointId: string, execute: typeof query = query) {
+  const result = await execute(
+    `SELECT * FROM releases
+     WHERE endpoint_id = $1 AND (is_active OR (status = 'draft' AND version_num > COALESCE(
+       (SELECT MAX(version_num) FROM releases WHERE endpoint_id = $1 AND published_at IS NOT NULL), 0)))
+     ORDER BY version_num DESC LIMIT 1`, [endpointId]);
+  return result.rows[0] ?? null;
 }
 
 export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayload): Promise<{
@@ -26,7 +38,7 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
   manifestJson: string;
   releaseDir: string;
 }> {
-  const { sessionId, immediatePublish } = payload;
+  const { sessionId, immediatePublish, allowEmptySnapshot = false, releaseNotes } = payload;
 
   const sessionRes = await query(
     `SELECT s.*, e.slug as endpoint_slug, e.cleanup_rules, e.auto_publish
@@ -66,13 +78,7 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
     await client.query(`SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || $1::text))`, [endpointId]);
 
     // Get active release for base merging if in add_replace mode
-    const activeReleaseRes = await client.query(
-      `SELECT id, release_id, version_num FROM releases
-       WHERE endpoint_id = $1 AND (is_active = TRUE OR status = 'draft')
-       ORDER BY version_num DESC LIMIT 1`,
-      [endpointId]
-    );
-    const activeRelease = activeReleaseRes.rows[0] || null;
+    const activeRelease = await getWorkingRelease(endpointId, client.query.bind(client) as typeof query);
 
     // Determine next version number and release_id atomically under lock
     const maxVersionRes = await client.query(
@@ -115,12 +121,25 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
       });
     }
 
-    if (filesMap.size === 0 && activeRelease) {
-      throw new Error(`Garde-fou : la version résultante est entièrement vide alors qu'une version précédente existait. Publication annulée.`);
+    if (filesMap.size === 0 && Number(activeRelease?.total_files) > 0 && !allowEmptySnapshot) {
+      throw Object.assign(new Error('Le lot est vide. Aucun fichier publié ne sera remplacé.'), { statusCode: 409 });
+    }
+    for (const relativePath of filesMap.keys()) {
+      const parts = relativePath.replace(/\/$/, '').split('/');
+      if (relativePath.endsWith('/') && filesMap.has(parts.join('/'))) {
+        throw Object.assign(new Error(`Un fichier et un dossier utilisent le chemin "${parts.join('/')}".`), { statusCode: 409 });
+      }
+      for (let index = 1; index < parts.length; index++) {
+        const parent = parts.slice(0, index).join('/');
+        if (filesMap.has(parent) && !filesMap.get(parent)?.isDir) {
+          throw Object.assign(new Error(`Un fichier et un dossier utilisent le chemin "${parent}".`), { statusCode: 409 });
+        }
+      }
     }
 
-    // Create physical release directory: <DATA_DIR>/storage/endpoints/<slug>/releases/<release_id>/
-    const targetReleaseDir = path.join(ENDPOINTS_DIR, endpointSlug, 'releases', relIdStr);
+    // Nginx denies hidden directories. Release URLs become public at publication.
+    const targetReleaseDir = path.join(ENDPOINTS_DIR, endpointSlug, '.drafts', relIdStr);
+    fs.rmSync(targetReleaseDir, { recursive: true, force: true });
     if (!fs.existsSync(targetReleaseDir)) {
       fs.mkdirSync(targetReleaseDir, { recursive: true, mode: 0o755 });
     }
@@ -213,7 +232,8 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
 
   const shouldPublish = immediatePublish ?? shouldAutoPublish;
   if (shouldPublish) {
-    await publishReleaseInternal(endpointId, createdReleaseId, endpointSlug, manifestJson, releaseDir);
+    await publishReleaseInternal(endpointId, createdReleaseId, endpointSlug, manifestJson,
+      path.join(ENDPOINTS_DIR, endpointSlug, 'releases', releaseIdStr), releaseNotes);
   }
 
   // Mark upload session as completed
@@ -257,7 +277,7 @@ export async function handlePublishRelease(payload: PublishReleasePayload): Prom
     ? rel.manifest_content
     : JSON.stringify(rel.manifest_content, null, 2);
 
-  await publishReleaseInternal(endpointId, releaseId, endpointSlug, manifestJson, releaseDir);
+  await publishReleaseInternal(endpointId, releaseId, endpointSlug, manifestJson, releaseDir, payload.releaseNotes);
 }
 
 /**
@@ -268,7 +288,8 @@ export async function publishReleaseInternal(
   releaseDbId: string,
   endpointSlug: string,
   manifestJson: string,
-  releaseDir: string
+  releaseDir: string,
+  releaseNotes?: string
 ): Promise<void> {
   const endpointDir = path.join(ENDPOINTS_DIR, endpointSlug);
   fs.mkdirSync(endpointDir, { recursive: true, mode: 0o755 });
@@ -283,6 +304,14 @@ export async function publishReleaseInternal(
 
   await withTransaction(async (client) => {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || $1::text))`, [endpointId]);
+    if (!fs.existsSync(releaseDir)) {
+      const draftDir = path.join(endpointDir, '.drafts', path.basename(releaseDir));
+      if (!fs.existsSync(draftDir)) {
+        throw Object.assign(new Error('Les fichiers de cette version sont indisponibles.'), { statusCode: 409 });
+      }
+      fs.mkdirSync(path.dirname(releaseDir), { recursive: true, mode: 0o755 });
+      fs.renameSync(draftDir, releaseDir);
+    }
   // 1. Write active manifest atomically: index.php.tmp.<pid>.<time>.<nonce> -> index.php
   const fd = fs.openSync(tempManifestPath, 'w');
   try {
@@ -317,9 +346,10 @@ export async function publishReleaseInternal(
       `UPDATE releases
        SET is_active = TRUE,
            status = 'published',
-           published_at = NOW()
+           published_at = NOW(),
+           release_notes = COALESCE($2, release_notes)
        WHERE id = $1`,
-      [releaseDbId]
+      [releaseDbId, releaseNotes ?? null]
     );
     const instRes = await client.query('SELECT id FROM instances WHERE endpoint_id = $1', [endpointId]);
     for (const inst of instRes.rows) await writeV2ManifestToEndpoint(inst.id, client.query.bind(client) as typeof query);

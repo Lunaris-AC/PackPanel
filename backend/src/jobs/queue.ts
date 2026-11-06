@@ -9,9 +9,10 @@ export class JobQueue {
     type: JobType,
     payload: T,
     priority: number = 0,
-    maxAttempts: number = 3
+    maxAttempts: number = 3,
+    execute: typeof query = query
   ): Promise<string> {
-    const res = await query(
+    const res = await execute(
       `INSERT INTO jobs (job_type, payload, priority, max_attempts)
        VALUES ($1, $2, $3, $4)
        RETURNING id`,
@@ -24,7 +25,7 @@ export class JobQueue {
    * Checks out the next pending or timed-out job atomically using SKIP LOCKED.
    */
 
-  static async fetchNext(workerId: string): Promise<JobRecord | null> {
+  static async fetchNext(workerId: string, launcherOnly = false): Promise<JobRecord | null> {
     const res = await query(
       `UPDATE jobs
        SET status = 'running',
@@ -34,14 +35,15 @@ export class JobQueue {
            attempts = attempts + 1
        WHERE id = (
          SELECT id FROM jobs
-         WHERE (status = 'pending')
-            OR (status = 'running' AND heartbeat_at < NOW() - INTERVAL '2 minutes')
+         WHERE (job_type = 'build_launcher') = $2 AND (
+           status = 'pending' OR (status = 'running' AND heartbeat_at < NOW() - INTERVAL '2 minutes')
+         )
          ORDER BY priority DESC, created_at ASC
          LIMIT 1
          FOR UPDATE SKIP LOCKED
        )
        RETURNING *`,
-      [workerId]
+      [workerId, launcherOnly]
     );
 
     if (res.rows.length === 0) {

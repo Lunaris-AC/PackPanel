@@ -23,6 +23,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState<boolean>(true);
 
   const checkAuth = async () => {
+    if (window.location.protocol === 'https:') localStorage.removeItem('packpanel_token');
     try {
       const res = await api.get<{ user: User }>('/auth/me');
       setUser(res.user);
@@ -41,7 +42,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const res = await api.post<{ user?: User; token?: string; require2FA?: boolean }>('/auth/login', {
       username,
       password,
-      totpCode
+      totpCode,
+      cookieOnly: window.location.protocol === 'https:'
     });
 
     if (res.require2FA) {

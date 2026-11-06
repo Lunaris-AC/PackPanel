@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { query, withTransaction } from './index';
-import { config } from '../config';
+import { config, ENDPOINTS_DIR } from '../config';
 import { hashPassword } from '../auth/argon2';
 
 export async function runMigrations() {
@@ -23,6 +23,17 @@ export async function runMigrations() {
   await withTransaction(async (client) => {
     await client.query(schemaSql);
   });
+  const drafts = await query(`SELECT r.release_id, e.slug FROM releases r JOIN endpoints e ON e.id = r.endpoint_id
+    WHERE r.status = 'draft' AND NOT r.is_active`);
+  for (const { release_id, slug } of drafts.rows) {
+    const endpointDir = path.join(ENDPOINTS_DIR, slug);
+    const oldPath = path.join(endpointDir, 'releases', release_id);
+    const newPath = path.join(endpointDir, '.drafts', release_id);
+    if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+      fs.mkdirSync(path.dirname(newPath), { recursive: true });
+      fs.renameSync(oldPath, newPath);
+    }
+  }
   console.log('Database schema successfully migrated.');
 
   // Check if admin user exists

@@ -1,16 +1,18 @@
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, Menu, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { z } from 'zod';
-import { AuthProfile, LauncherConfigV2, LauncherConfigV2Schema } from '@packpanel/protocol';
+import { AuthProfile, InstanceManifestV2, LauncherConfigV2, LauncherConfigV2Schema } from '@packpanel/protocol';
 import {
   MinecraftEngine,
   createOfflineProfile,
   parseJvmArguments,
   MicrosoftAuthenticator,
-  DeviceCodeResponse
+  DeviceCodeResponse,
+  InstanceSynchronizer
 } from '@packpanel/engine';
+import { packSummarySchema, redactDiagnostics, summarizePack } from './player-state';
 
 let mainWindow: BrowserWindow | null = null;
 let currentProfile: AuthProfile | null = null;
@@ -28,9 +30,12 @@ const engine = new MinecraftEngine({ baseDir: dataDir });
 let launchInProgress = false;
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 const settingsSchema = z.object({ ramMb: z.number().int().min(1024).max(65536), customJvmArgs: z.string().max(8192).default('') });
+const maximumMemoryMb = Math.min(65536, Math.max(1024, Math.floor(os.totalmem() / 1024 / 1024)));
 function readSettings() {
-  try { return settingsSchema.parse(JSON.parse(fs.readFileSync(settingsPath, 'utf8'))); }
-  catch { return { ramMb: Math.min(4096, Math.max(1024, Math.floor(os.totalmem() / 1024 / 1024))), customJvmArgs: '' }; }
+  try {
+    const settings = settingsSchema.parse(JSON.parse(fs.readFileSync(settingsPath, 'utf8')));
+    return { ...settings, ramMb: Math.min(settings.ramMb, maximumMemoryMb) };
+  } catch { return { ramMb: Math.min(4096, maximumMemoryMb), customJvmArgs: '' }; }
 }
 function configuredInstance() {
   const config = loadLauncherConfig();
@@ -39,9 +44,67 @@ function configuredInstance() {
   return instance;
 }
 function instanceDirectory() { return path.join(dataDir, 'instances', configuredInstance().slug); }
-engine.on('exit', () => { launchInProgress = false; });
-engine.on('crash', () => { launchInProgress = false; });
-engine.on('error', () => { launchInProgress = false; });
+function playerDirectory() { return path.join(app.getPath('userData'), 'packs', configuredInstance().id); }
+function writePlayerFile(name: string, content: string) {
+  const directory = playerDirectory();
+  const filename = path.join(directory, name);
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(filename + '.tmp', content, { mode: 0o600 });
+  fs.renameSync(filename + '.tmp', filename);
+}
+function readPlayerFile(name: string) {
+  try { return fs.readFileSync(path.join(playerDirectory(), name), 'utf8'); }
+  catch { return ''; }
+}
+const optionalChoicesSchema = z.record(z.boolean());
+function readOptionalChoices(): Record<string, boolean> {
+  try { return optionalChoicesSchema.parse(JSON.parse(readPlayerFile('optional-files.json'))); }
+  catch { return {}; }
+}
+
+let liveLog = '';
+let logTimer: ReturnType<typeof setTimeout> | undefined;
+function flushLog() {
+  clearTimeout(logTimer);
+  logTimer = undefined;
+  if (!liveLog) return;
+  try { writePlayerFile('last-launch.log', liveLog); }
+  catch (error) { console.warn('Could not save launcher diagnostics', error); }
+}
+function recordLog(line: string) {
+  const cleaned = redactDiagnostics(line, os.homedir());
+  liveLog = `${liveLog}${cleaned}\n`.slice(-60_000);
+  mainWindow?.webContents.send('launcher:log', cleaned);
+  logTimer ??= setTimeout(flushLog, 1000);
+  logTimer.unref();
+}
+function beginPreparation() {
+  if (launchInProgress) throw new Error('Une instance est déjà en cours de lancement ou d’exécution.');
+  launchInProgress = true;
+  liveLog = '';
+  recordLog(new Date().toISOString());
+}
+engine.on('log', recordLog);
+engine.on('packReady', (manifest: InstanceManifestV2) => {
+  const pack = summarizePack(manifest);
+  try { writePlayerFile('installed.json', JSON.stringify(pack)); }
+  catch (error) { recordLog(String(error)); }
+  mainWindow?.webContents.send('launcher:packReady', pack);
+});
+engine.on('progress', event => mainWindow?.webContents.send('launcher:progress', event));
+engine.on('exit', () => {
+  launchInProgress = false;
+  flushLog();
+  mainWindow?.webContents.send('launcher:progress', { step: 'stopped', progress: 0, message: 'Minecraft est arrêté.' });
+});
+function reportCrash(exitCode: number, report?: string) {
+  launchInProgress = false;
+  recordLog(report ? `Minecraft (${exitCode})\n${report}` : `Minecraft (${exitCode})`);
+  flushLog();
+  mainWindow?.webContents.send('launcher:crash', { exitCode });
+}
+engine.on('crash', data => reportCrash(data.exitCode, data.crashReport));
+engine.on('error', error => reportCrash(-1, error.message));
 
 // Embedded or cached launcher configuration
 function loadLauncherConfig(): LauncherConfigV2 {
@@ -84,21 +147,6 @@ function createWindow() {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', event => event.preventDefault());
-
-  // Forward engine events to renderer
-  engine.on('progress', (event) => {
-    mainWindow?.webContents.send('launcher:progress', event);
-  });
-
-  engine.on('log', (line) => {
-    mainWindow?.webContents.send('launcher:log', line);
-  });
-
-  engine.on('crash', (data) => {
-    mainWindow?.webContents.send('launcher:crash', data);
-  });
-  engine.on('exit', () => mainWindow?.webContents.send('launcher:progress', { step: 'stopped', progress: 0, message: 'Minecraft est arrêté.' }));
-  engine.on('error', error => mainWindow?.webContents.send('launcher:crash', { exitCode: -1, crashReport: error.message }));
 
   // Load renderer
   const isDev = process.env.NODE_ENV === 'development';
@@ -144,9 +192,10 @@ ipcMain.handle('launcher:windowControl', (event, action: unknown) => {
 ipcMain.handle('launcher:getConfig', async () => {
   return loadLauncherConfig();
 });
-ipcMain.handle('launcher:getSettings', async () => ({ ...readSettings(), gameDirectory: instanceDirectory(), maximumMemoryMb: Math.min(65536, Math.max(1024, Math.floor(os.totalmem() / 1024 / 1024))) }));
+ipcMain.handle('launcher:getSettings', async () => ({ ...readSettings(), gameDirectory: instanceDirectory(), maximumMemoryMb }));
 ipcMain.handle('launcher:saveSettings', async (_event: any, settings: unknown) => {
   const parsed = settingsSchema.parse(settings);
+  if (parsed.ramMb > maximumMemoryMb) throw new Error('Allocation mémoire invalide.');
   parseJvmArguments(parsed.customJvmArgs);
   fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
   const temporary = settingsPath + '.tmp';
@@ -159,6 +208,51 @@ ipcMain.handle('launcher:openGameDirectory', async () => {
   fs.mkdirSync(directory, { recursive: true });
   const error = await shell.openPath(directory);
   if (error) throw new Error(error);
+});
+
+ipcMain.handle('launcher:getPackStatus', async () => {
+  const instance = configuredInstance();
+  let installed = null;
+  try { installed = packSummarySchema.parse(JSON.parse(readPlayerFile('installed.json'))); }
+  catch { /* The first preparation will record the installed version. */ }
+  const latest = await InstanceSynchronizer.fetchManifest(instance.manifestUrl, AbortSignal.timeout(8000))
+    .catch(() => null);
+  let optionalFiles: Array<{ path: string; enabled: boolean }> = [];
+  if (latest) {
+    try { optionalFiles = new InstanceSynchronizer(instanceDirectory()).listOptionalFiles(latest, readOptionalChoices()); }
+    catch { /* An invalid path will be reported during preparation. */ }
+  }
+  return { installed, latest: latest ? summarizePack(latest) : null, optionalFiles };
+});
+ipcMain.handle('launcher:setOptionalFile', async (_event, value: unknown) => {
+  if (launchInProgress) throw new Error('Une instance est déjà en cours de lancement ou d’exécution.');
+  const choice = z.object({ path: z.string().min(1).max(512), enabled: z.boolean() }).parse(value);
+  const choices = { ...readOptionalChoices(), [choice.path]: choice.enabled };
+  writePlayerFile('optional-files.json', JSON.stringify(choices));
+});
+ipcMain.handle('launcher:prepareInstance', async () => {
+  const target = configuredInstance();
+  beginPreparation();
+  try {
+    await engine.prepareInstance({ manifestUrl: target.manifestUrl, gameDir: instanceDirectory(), optionalFiles: readOptionalChoices() });
+  } catch (error) {
+    recordLog(String(error));
+    throw error;
+  } finally {
+    launchInProgress = false;
+    flushLog();
+  }
+});
+ipcMain.handle('launcher:getLastLog', async () => liveLog || readPlayerFile('last-launch.log'));
+ipcMain.handle('launcher:copyDiagnostics', async () => {
+  const log = liveLog || readPlayerFile('last-launch.log');
+  if (!log) return false;
+  clipboard.writeText(redactDiagnostics(log, os.homedir()));
+  return true;
+});
+ipcMain.handle('launcher:copyServerAddress', async (_event, value: unknown) => {
+  const address = z.string().min(1).max(255).regex(/^[a-zA-Z0-9_.:\-\[\]]+$/).parse(value);
+  clipboard.writeText(address);
 });
 
 ipcMain.handle('launcher:loginOffline', async (_event: any, username: string) => {
@@ -210,22 +304,28 @@ ipcMain.handle('launcher:launchInstance', async (_event: any, options: {
     throw new Error('Aucune instance Minecraft configurée dans ce launcher.');
   }
   if (!/^[a-z0-9_-]+$/.test(targetInstance.slug)) throw new Error('Identifiant d’instance invalide.');
-  if (options.ramMb !== undefined && (!Number.isInteger(options.ramMb) || options.ramMb < 1024 || options.ramMb > 65536)) throw new Error('Allocation mémoire invalide.');
+  if (options.ramMb !== undefined && (!Number.isInteger(options.ramMb) || options.ramMb < 1024 || options.ramMb > maximumMemoryMb)) throw new Error('Allocation mémoire invalide.');
 
   const instanceGameDir = path.join(dataDir, 'instances', targetInstance.slug);
   if (!fs.existsSync(instanceGameDir)) {
     fs.mkdirSync(instanceGameDir, { recursive: true });
   }
 
-  launchInProgress = true;
+  beginPreparation();
   try { await engine.launchInstance({
     manifestUrl: targetInstance.manifestUrl,
     gameDir: instanceGameDir,
     profile: currentProfile,
     customJavaPath: options.customJavaPath,
+    optionalFiles: readOptionalChoices(),
     maxMemoryMb: options.ramMb || readSettings().ramMb,
     customJvmArgs: parseJvmArguments(readSettings().customJvmArgs)
-  }); } catch (error) { launchInProgress = false; throw error; }
+  }); } catch (error) {
+    launchInProgress = false;
+    recordLog(String(error));
+    flushLog();
+    throw error;
+  }
 });
 
 ipcMain.handle('launcher:stopInstance', async () => {
@@ -249,3 +349,4 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+app.on('before-quit', flushLog);

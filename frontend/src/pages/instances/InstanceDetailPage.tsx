@@ -28,29 +28,35 @@ import { ExplorerPage } from '../ExplorerPage';
 import { VersionsPage } from '../VersionsPage';
 import { InstanceLauncherTab } from './InstanceLauncherTab';
 import { InstanceSettingsTab } from './InstanceSettingsTab';
+import { useAuth } from '../../context/AuthContext';
+import { Modal } from '../../components/Modal';
 
 
 
 export const InstanceDetailPage: React.FC = () => {
-  const { tr } = useTranslation();
+  const { tr, language } = useTranslation();
+  const text = (fr: string, en: string) => language === 'fr' ? fr : en;
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const [instance, setInstance] = useState<MinecraftInstance | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [publishDialog, setPublishDialog] = useState(false);
+  const [releaseNotes, setReleaseNotes] = useState('');
 
   // Extract current sub-tab from path: /instances/:id/:tab
   const pathParts = location.pathname.split('/');
   const subTab = pathParts[3] || 'overview';
 
-  const loadInstance = async () => {
+  const loadInstance = async (showLoading = false) => {
     if (!id) return;
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const res = await api.get<{ instance: MinecraftInstance }>(`/v2/instances/${id}`);
       setInstance(res.instance);
     } catch (err: any) {
@@ -62,25 +68,29 @@ export const InstanceDetailPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadInstance();
+    loadInstance(true);
   }, [id]);
 
-  const handleCopyManifest = () => {
+  const handleCopyManifest = async () => {
     if (!instance?.manifest_url) return;
-    navigator.clipboard.writeText(instance.manifest_url);
-    setCopiedUrl(true);
-    toast.success(tr("URL du manifeste PackPanel copiée !"));
-    setTimeout(() => setCopiedUrl(false), 2000);
+    try {
+      await navigator.clipboard.writeText(instance.manifest_url);
+      setCopiedUrl(true);
+      toast.success(tr("URL du manifeste PackPanel copiée !"));
+      setTimeout(() => setCopiedUrl(false), 2000);
+    } catch {
+      window.prompt(tr('Copiez le lien du manifeste.'), instance.manifest_url);
+    }
   };
 
   const handlePublish = async () => {
     if (!instance) return;
-    if (!window.confirm(tr("Publier une nouvelle version pour \"{0}\" ? Cela figera les fichiers actuels et la configuration de jeu.", { 0: instance.name }))) return;
-
     try {
       setPublishing(true);
-      await api.post(`/v2/instances/${instance.id}/publish`);
+      await api.post(`/v2/instances/${instance.id}/publish`, { notes: releaseNotes.trim() || undefined });
       toast.success(tr("Nouvelle version publiée avec succès ! Le manifeste packpanel.json est à jour."));
+      setPublishDialog(false);
+      setReleaseNotes('');
       loadInstance();
     } catch (err: any) {
       toast.error(err.message || tr("Erreur lors de la publication"));
@@ -101,7 +111,8 @@ export const InstanceDetailPage: React.FC = () => {
   }
 
   const isPublished = Boolean(instance.active_release_id);
-  const hasPendingChanges = (instance.pendingChangesCount || 0) > 0 || instance.hasDraftConfigChanges;
+  const hasPendingChanges = Boolean(instance.draft_release_id || (instance.pendingChangesCount || 0) > 0 || instance.hasDraftConfigChanges);
+  const canPublish = instance.permissions?.can_publish ?? (user?.role === 'admin' || user?.role === 'operator');
 
   return (
     <div className="space-y-6">
@@ -157,20 +168,16 @@ export const InstanceDetailPage: React.FC = () => {
           </div>
 
           {/* Quick Publish CTA button */}
-          <div className="flex items-center space-x-2 shrink-0">
+          {canPublish && <div className="flex items-center space-x-2 shrink-0">
             <button
-              onClick={handlePublish}
-              disabled={publishing}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition shadow-xs flex items-center gap-1.5 ${
-                hasPendingChanges
-                  ? 'bg-indigo-600 hover:bg-indigo-500 text-white animate-pulse'
-                  : 'bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900'
-              }`}
+              onClick={() => setPublishDialog(true)}
+              disabled={publishing || !hasPendingChanges || !instance.endpoint_id}
+              className="px-4 py-2 rounded-xl text-xs font-semibold transition shadow-xs flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" />
-              {publishing ? tr("Publication...") : hasPendingChanges ? tr("Publier les modifications") : tr("Publier une version")}
+              {publishing ? tr("Publication...") : !isPublished ? tr("Publier la première version") : hasPendingChanges ? tr("Publier les modifications") : tr("Version à jour")}
             </button>
-          </div>
+          </div>}
         </div>
 
         {/* Deep-Linked Tabs */}
@@ -215,16 +222,10 @@ export const InstanceDetailPage: React.FC = () => {
                   <p className="text-amber-700/80 dark:text-amber-300/80 mt-0.5">
                     {instance.hasDraftConfigChanges && tr("Les paramètres de jeu (moteur, Java ou serveur) ont été modifiés. ")}
                     {(instance.pendingChangesCount || 0) > 0 && tr("{0} fichier(s) téléversé(s) en attente d'incorporation. ", { 0: instance.pendingChangesCount || 0 })}
-                    {tr("Vos joueurs utilisent actuellement la version figée active.")} </p>
+                    {instance.draft_release_id && tr("Le brouillon contient des modifications de fichiers. ")}
+                    {tr(isPublished ? "Vos joueurs utilisent actuellement la version figée active." : "Publiez cette instance pour la rendre disponible aux joueurs.")} </p>
                 </div>
               </div>
-              <button
-                onClick={handlePublish}
-                disabled={publishing}
-                className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg transition shrink-0 shadow-2xs"
-              >
-                {publishing ? tr("Publication...") : tr("Publier maintenant")}
-              </button>
             </div>
           )}
 
@@ -342,12 +343,12 @@ export const InstanceDetailPage: React.FC = () => {
 
       {/* Tab 2: Embedded Files Explorer */}
       {subTab === 'files' && instance.endpoint_id && (
-        <ExplorerPage endpointId={instance.endpoint_id} />
+        <ExplorerPage endpointId={instance.endpoint_id} onDraftChange={loadInstance} canWrite={instance.permissions?.can_write} />
       )}
 
       {/* Tab 3: Embedded Publications & Rollback */}
       {subTab === 'publications' && instance.endpoint_id && (
-        <VersionsPage endpointId={instance.endpoint_id} />
+        <VersionsPage endpointId={instance.endpoint_id} refreshKey={instance.active_release_id} draftReleaseId={instance.draft_release_id ?? null} onRollback={loadInstance} canPublish={canPublish} />
       )}
 
       {/* Tab 4: Embedded Launcher Studio */}
@@ -359,6 +360,28 @@ export const InstanceDetailPage: React.FC = () => {
       {subTab === 'settings' && (
         <InstanceSettingsTab instance={instance} onRefresh={loadInstance} />
       )}
+      <Modal isOpen={publishDialog} onClose={() => { if (!publishing) setPublishDialog(false); }}
+        title={isPublished ? tr("Publier les modifications") : tr("Publier la première version")}>
+        <form onSubmit={event => { event.preventDefault(); if (!publishing) void handlePublish(); }} className="space-y-4">
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+            {text('Cette version devient celle que les joueurs recevront au prochain lancement.', 'Players will receive this version the next time they launch the game.')}
+          </p>
+          <label className="block text-sm font-medium text-zinc-800 dark:text-zinc-100">
+            {text('Notes de version (facultatif)', 'Release notes (optional)')}
+            <textarea value={releaseNotes} onChange={event => setReleaseNotes(event.target.value)} rows={4} maxLength={2000}
+              disabled={publishing} className="mt-2 w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent p-3"
+              placeholder={text('Qu’est-ce qui change pour les joueurs ?', 'What changed for players?')} />
+          </label>
+          <div className="flex justify-end gap-3">
+            <button type="button" disabled={publishing} onClick={() => setPublishDialog(false)} className="px-3 py-2 text-sm">
+              {text('Annuler', 'Cancel')}
+            </button>
+            <button type="submit" disabled={publishing} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              {publishing ? tr("Publication...") : text('Publier', 'Publish')}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

@@ -16,7 +16,7 @@ import { useTranslation } from '../i18n';
 
 interface DashboardData {
   summary: DashboardStats;
-  endpoints: Endpoint[];
+  endpoints: Array<Endpoint & { instance_id?: string | null }>;
   recentJobs: Job[];
 }
 
@@ -190,7 +190,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                   data.endpoints.slice(0, 5).map(ep => (
                     <tr
                       key={ep.id}
-                      onClick={() => onNavigate(`endpoint:${ep.id}`)}
+                        onClick={() => onNavigate(ep.instance_id ? `instance:${ep.instance_id}` : 'instances')}
                       className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40 cursor-pointer transition"
                     >
                       <td className="py-2.5 px-3 font-sans font-medium text-zinc-900 dark:text-zinc-100">

@@ -17,8 +17,8 @@ async function api(route, method = 'GET', body) {
   if (!response.ok) throw new Error(`${method} ${route}: HTTP ${response.status} ${JSON.stringify(data)}`);
   return data;
 }
-async function waitFor(predicate, label) {
-  for (let attempt = 0; attempt < 60; attempt++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 1000)); }
+async function waitFor(predicate, label, seconds = 60) {
+  for (let attempt = 0; attempt < seconds; attempt++) { const result = await predicate(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 1000)); }
   throw new Error('Timed out: ' + label);
 }
 (async () => {
@@ -37,7 +37,7 @@ async function waitFor(predicate, label) {
   const upload = (await api(endpoint + '/uploads/sessions', 'POST', { expectedFilesCount: 1 })).session;
   const form = new FormData(); form.set('sessionId', upload.id); form.set('relativePath', 'config/release-check.txt'); form.set('file', new Blob(['release one\n']), 'check.txt');
   await api(endpoint + '/uploads/direct', 'POST', form);
-  await waitFor(async () => (await api(endpoint + '/uploads/sessions/' + upload.id)).files.every(file => file.status === 'verified'), 'direct upload');
+  await waitFor(async () => (await api(endpoint + '/uploads/sessions/' + upload.id)).files.some(file => file.status === 'verified'), 'direct upload');
   await api('/v2/instances/' + instance.id + '/publish', 'POST');
   let manifest = await api('/v2/instances/' + instance.id + '/manifest');
   const file = manifest.files.find(file => file.path === 'config/release-check.txt'); assert.ok(file);
@@ -62,10 +62,26 @@ async function waitFor(predicate, label) {
   manifest = await api('/v2/instances/' + instance.id + '/manifest');
   assert.ok(manifest.files.some(file => file.path === 'config/zip-check.txt'));
   assert.ok(manifest.files.some(file => file.path === 'config/tus-check.txt'));
+  const optionalPath = 'config/optional-audit.txt';
+  await api(endpoint + '/explorer/save-file?draft=true', 'POST', { path: optionalPath, content: 'Optional fixture\n' });
+  const notes = 'Prepared player download and optional configuration.\nSecond line.';
+  await api('/v2/instances/' + instance.id, 'PUT', { filePolicies: { optional_mods: [optionalPath] } });
+  await api('/v2/instances/' + instance.id + '/publish', 'POST', { notes });
+  manifest = await api('/v2/instances/' + instance.id + '/manifest');
+  assert.equal(manifest.releaseNotes, notes);
+  assert.equal(manifest.files.find(file => file.path === optionalPath)?.policy, 'optional');
   await api('/v2/instances/' + instance.id + '/launcher/enable', 'POST');
   await api('/v2/instances/' + instance.id + '/launcher', 'PUT', { title: 'Release Check Launcher', authMicrosoft: false, authOffline: true });
   console.log('API, modloader combinations, uploads, publication and CDN validated. Building Windows runtime...');
-  const build = (await api('/v2/instances/' + instance.id + '/launcher/build', 'POST', { targetOs: 'windows' })).build;
+  const launcherRoute = '/v2/instances/' + instance.id + '/launcher';
+  const queued = (await api(launcherRoute + '/build', 'POST', { targetOs: 'windows', background: true })).build;
+  assert.equal(queued.status, 'pending');
+  const completed = await waitFor(async () => {
+    const record = (await api(launcherRoute + '/builds')).builds.find(item => item.id === queued.id);
+    if (record?.status === 'failed') throw new Error(record.error_message);
+    return record?.status === 'completed' && record;
+  }, 'launcher build', 360);
+  const build = { buildId: completed.id, artifactSha256: completed.artifact_sha256, version: completed.version };
   const download = await fetch(base + '/api/v2/instances/' + instance.id + '/launcher/builds/' + build.buildId + '/download', { headers: { Authorization: 'Bearer ' + token } });
   assert.equal(download.status, 200);
   const bytes = Buffer.from(await download.arrayBuffer()); assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), build.artifactSha256);
@@ -73,5 +89,31 @@ async function waitFor(predicate, label) {
   for (const entry of ['windows/electron.exe', 'windows/resources/app/dist/main/index.js', 'windows/resources/app/dist/renderer/index.html']) assert.ok(artifact.getEntry(entry), entry);
   const zipPath = path.join(directory, 'downloaded-launcher.zip'); fs.writeFileSync(zipPath, bytes);
   fs.writeFileSync(stateFile, JSON.stringify({ base, token, instance, directory, build, zipPath }), { mode: 0o600 });
-  console.log('PASS API and downloaded artifact. Validation directory: ' + directory);
+  const playerRoute = new URL(filesBase + '/play-api/' + instance.slug).href;
+  const playerDownload = playerRoute + '/downloads/' + build.buildId;
+  const shareRoute = launcherRoute + '/builds/' + build.buildId + '/share';
+  assert.equal((await fetch(playerRoute)).status, 404);
+  assert.equal((await fetch(playerDownload)).status, 404);
+  await api(shareRoute, 'PUT', { shared: true });
+  try {
+    const player = await fetch(playerRoute);
+    assert.equal(player.status, 200);
+    const card = await player.json();
+    assert.equal(card.release.notes, notes);
+    assert.equal(card.downloads[0].sha256, build.artifactSha256);
+    assert.equal(new URL(card.downloads[0].url, filesBase).href, playerDownload);
+    const head = await fetch(playerDownload, { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal(Number(head.headers.get('content-length')), bytes.length);
+    const range = await fetch(playerDownload, { headers: { Range: 'bytes=0-3' } });
+    assert.equal(range.status, 206);
+    assert.equal(range.headers.get('content-range'), `bytes 0-3/${bytes.length}`);
+    assert.deepEqual(Buffer.from(await range.arrayBuffer()), bytes.subarray(0, 4));
+    const invalid = await fetch(playerDownload, { headers: { Range: `bytes=${bytes.length}-` } });
+    assert.equal(invalid.status, 416);
+  } finally {
+    await api(shareRoute, 'PUT', { shared: false });
+  }
+  assert.equal((await fetch(playerDownload)).status, 404);
+  console.log('PASS API, downloaded artifact, release notes, public sharing, range requests and revocation. Validation directory: ' + directory);
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

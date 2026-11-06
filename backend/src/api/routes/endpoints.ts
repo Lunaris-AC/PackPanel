@@ -51,7 +51,6 @@ export async function endpointRoutes(fastify: FastifyInstance) {
     }
 
     const endpoint = res.rows[0];
-    if (req.user!.role !== 'admin') await query('INSERT INTO user_endpoint_permissions (user_id, endpoint_id, can_write, can_publish) VALUES ($1, $2, TRUE, TRUE)', [req.user!.userId, endpoint.id]);
     return reply.send({
       endpoint: {
         ...endpoint,
@@ -85,7 +84,8 @@ export async function endpointRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: `Le slug "${data.slug}" est déjà utilisé` });
     }
 
-    const res = await query(
+    const endpoint = await withTransaction(async client => {
+      const res = await client.query(
       `INSERT INTO endpoints (slug, name, description, cleanup_rules, auto_publish, default_retention_days, min_retained_versions, quota_bytes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
@@ -99,9 +99,13 @@ export async function endpointRoutes(fastify: FastifyInstance) {
         data.min_retained_versions,
         data.quota_bytes
       ]
-    );
-
-    const endpoint = res.rows[0];
+      );
+      const created = res.rows[0];
+      if (req.user!.role === 'operator') {
+        await client.query('INSERT INTO user_endpoint_permissions (user_id, endpoint_id, can_write, can_publish) VALUES ($1, $2, TRUE, TRUE)', [req.user!.userId, created.id]);
+      }
+      return created;
+    });
     await recordAuditLog(req.user!.userId, 'create', 'endpoint', endpoint.id, { slug: data.slug }, req.ip);
 
     return reply.status(201).send({

@@ -7,8 +7,10 @@ import { useToast } from './Toast';
 interface SetupWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (createdSlug?: string) => void;
+  onComplete: (draft?: { name: string; slug: string }) => void;
 }
+
+const suggestSlug = (name: string) => name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onComplete }) => {
   const { tr, t } = useTranslation();
@@ -55,31 +57,20 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
 
   const handleFinish = async () => {
     setSubmitting(true);
-    let createdSlug = '';
     try {
       await api.put('/system/public-config', { adminFqdn, filesFqdn, filesBaseUrl });
-      // 1. Change password if provided
       if (newPassword) {
-        await api.post('/auth/change-password', {
+        await api.put('/auth/password', {
           currentPassword,
           newPassword
         });
       }
 
-      // 2. Create endpoint if requested
-      if (modpackName.trim() && modpackSlug.trim()) {
-        const res = await api.post<{ endpoint: { slug: string } }>('/endpoints', {
-          name: modpackName.trim(),
-          slug: modpackSlug.trim().toLowerCase(),
-          cleanup_rules: ['mods']
-        });
-        createdSlug = res?.endpoint?.slug || modpackSlug.trim().toLowerCase();
-      }
-
       localStorage.setItem('packpanel_setup_completed', 'true');
       toast.success(t('setup.done_title'));
       onClose();
-      onComplete(createdSlug);
+      const name = modpackName.trim();
+      onComplete(name ? { name, slug: modpackSlug || suggestSlug(name) } : undefined);
     } catch (err: any) {
       toast.error(err.message || t('common.error'));
     } finally {
@@ -229,10 +220,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
                   <input
                     type="text"
                     value={modpackName}
+                    maxLength={128}
                     onChange={e => {
                       setModpackName(e.target.value);
-                      if (!modpackSlug || modpackSlug === e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '')) {
-                        setModpackSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-'));
+                      if (!modpackSlug || modpackSlug === suggestSlug(modpackName)) {
+                        setModpackSlug(suggestSlug(e.target.value));
                       }
                     }}
                     className="w-full px-3 py-2 text-xs bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
@@ -247,6 +239,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ isOpen, onClose, onCom
                   <input
                     type="text"
                     value={modpackSlug}
+                    maxLength={64}
                     onChange={e => setModpackSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
                     className="w-full px-3 py-2 text-xs font-mono bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
                     placeholder="create-adventures"

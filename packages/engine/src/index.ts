@@ -29,13 +29,28 @@ export interface EngineConfig {
   baseDir: string;
 }
 
+interface PrepareOptions {
+  manifestUrl: string;
+  gameDir: string;
+  customJavaPath?: string;
+  optionalFiles?: Record<string, boolean>;
+}
+
+interface EngineLaunchOptions extends PrepareOptions {
+  profile: AuthProfile;
+  minMemoryMb?: number;
+  maxMemoryMb?: number;
+  customJvmArgs?: string[];
+  windowWidth?: number;
+  windowHeight?: number;
+}
+
 export class MinecraftEngine extends EventEmitter {
   private baseDir: string;
   private mojang: MojangVersionResolver;
   private java: JavaRuntimeManager;
   private launcher: MinecraftLauncher;
-  private preparationCancelled = false;
-  private preparing = false;
+  private preparation: AbortController | null = null;
 
   constructor(config: EngineConfig) {
     super();
@@ -54,27 +69,30 @@ export class MinecraftEngine extends EventEmitter {
   /**
    * Orchestrates the complete preparation and launch of a Minecraft instance.
    */
-  async launchInstance(options: {
-    manifestUrl: string;
-    gameDir: string;
-    profile: AuthProfile;
-    customJavaPath?: string;
-    minMemoryMb?: number;
-    maxMemoryMb?: number;
-    customJvmArgs?: string[];
-    windowWidth?: number;
-    windowHeight?: number;
-  }): Promise<void> {
-    this.preparationCancelled = false;
-    this.preparing = true;
+  async launchInstance(options: EngineLaunchOptions): Promise<void> {
+    await this.runInstance(options, options);
+  }
+
+  async prepareInstance(options: PrepareOptions): Promise<void> {
+    await this.runInstance(options);
+  }
+
+  private async runInstance(options: PrepareOptions, launch?: EngineLaunchOptions): Promise<void> {
+    if (this.preparation) throw new Error('Une instance est déjà en cours de préparation.');
+    const preparation = new AbortController();
+    this.preparation = preparation;
+    const { signal } = preparation;
     const notify = (step: EngineProgressEvent['step'], progress: number, message: string) => {
-      if (this.preparationCancelled) return;
+      if (signal.aborted) return;
       this.emit('progress', { step, progress, message } as EngineProgressEvent);
     };
     try {
     // 1. Fetch manifest
     notify('resolving_version', 5, 'Récupération du manifeste de l\'instance...');
-    const manifest = await InstanceSynchronizer.fetchManifest(options.manifestUrl);
+    const manifest = await InstanceSynchronizer.fetchManifest(options.manifestUrl, signal).catch(error => {
+      throw new Error(`PACKPANEL_MANIFEST_UNAVAILABLE: ${error.message}`, { cause: error });
+    });
+    signal.throwIfAborted();
 
     // 2. Synchronize pack files (mods, configs, etc.)
     notify('syncing_files', 15, 'Synchronisation des fichiers du modpack...');
@@ -82,18 +100,22 @@ export class MinecraftEngine extends EventEmitter {
     await synchronizer.sync(manifest, (current, total, file) => {
       const pct = Math.floor(15 + (current / (total || 1)) * 30);
       notify('syncing_files', pct, `Téléchargement : ${file} (${current}/${total})`);
-    });
+    }, 4, { signal, optionalFiles: options.optionalFiles });
+    signal.throwIfAborted();
 
     // 3. Resolve Java Runtime
     notify('checking_java', 48, 'Vérification de l\'environnement Java...');
     const requiredJava = manifest.java?.majorVersion || getRecommendedJavaVersion(manifest.minecraftVersion);
     const javaExec = options.customJavaPath || await this.java.resolveJavaPath(requiredJava, (done, total) => {
-      notify('downloading_java', 50, `Téléchargement de Java ${requiredJava} (${Math.round((done / total) * 100)}%)...`);
+      const progress = total ? Math.min(1, done / total) : 0;
+      notify('downloading_java', 48 + progress * 7, `Téléchargement de Java ${requiredJava}...`);
     });
+    signal.throwIfAborted();
 
     // 4. Resolve Mojang base version
     notify('resolving_version', 55, `Résolution de Minecraft ${manifest.minecraftVersion}...`);
     let versionData = await this.mojang.resolveVersion(manifest.minecraftVersion);
+    signal.throwIfAborted();
 
     // 5. Merge Mod Loader if specified
     if (manifest.loader) {
@@ -110,10 +132,12 @@ export class MinecraftEngine extends EventEmitter {
         versionData = await neoforge.mergeNeoForgeVersion(versionData, manifest.minecraftVersion, manifest.loader.version || '', javaExec);
       }
     }
+    signal.throwIfAborted();
 
     // 6. Download client jar
     notify('downloading_assets', 65, 'Téléchargement du client Minecraft...');
     const clientJarPath = await this.mojang.downloadClientJar(versionData);
+    signal.throwIfAborted();
 
     // 7. Resolve and download libraries
     notify('downloading_assets', 75, 'Téléchargement des bibliothèques...');
@@ -121,6 +145,7 @@ export class MinecraftEngine extends EventEmitter {
       const pct = Math.floor(75 + (index / total) * 15);
       notify('downloading_assets', pct, `Bibliothèque (${index}/${total}) : ${path.basename(name)}`);
     });
+    signal.throwIfAborted();
 
     // 8. Download Minecraft assets
     notify('downloading_assets', 90, 'Vérification des textures et sons...');
@@ -129,8 +154,13 @@ export class MinecraftEngine extends EventEmitter {
     });
 
     // 9. Launch Minecraft Process
-    if (this.preparationCancelled) { this.emit('exit', { exitCode: 0 }); return; }
-    this.preparing = false;
+    signal.throwIfAborted();
+    this.preparation = null;
+    this.emit('packReady', manifest);
+    if (!launch) {
+      notify('prepared', 100, 'Les fichiers du jeu sont prêts.');
+      return;
+    }
     notify('launching', 98, 'Démarrage du processus Minecraft...');
     this.launcher.launch({
       javaPath: javaExec,
@@ -139,28 +169,28 @@ export class MinecraftEngine extends EventEmitter {
       versionData,
       classpath,
       clientJarPath,
-      profile: options.profile,
+      profile: launch.profile,
       manifest,
-      minMemoryMb: options.minMemoryMb || 1024,
-      maxMemoryMb: options.maxMemoryMb || manifest.java?.recommendedMemoryMb || 4096,
-      customJvmArgs: [...(manifest.java?.jvmArgs || []), ...(options.customJvmArgs || [])],
-      windowWidth: options.windowWidth,
-      windowHeight: options.windowHeight
+      minMemoryMb: launch.minMemoryMb || 1024,
+      maxMemoryMb: launch.maxMemoryMb || manifest.java?.recommendedMemoryMb || 4096,
+      customJvmArgs: [...(manifest.java?.jvmArgs || []), ...(launch.customJvmArgs || [])],
+      windowWidth: launch.windowWidth,
+      windowHeight: launch.windowHeight
     });
 
     notify('running', 100, 'Minecraft est en cours d\'exécution.');
     } catch (error) {
-      if (this.preparationCancelled) this.emit('exit', { exitCode: 0 });
+      if (signal.aborted) this.emit('exit', { exitCode: 0 });
       else throw error;
-    } finally { this.preparing = false; }
+    } finally { if (this.preparation === preparation) this.preparation = null; }
   }
 
   /**
    * Stops the currently running instance.
    */
   stopInstance(): void {
-    if (this.preparing) {
-      this.preparationCancelled = true;
+    if (this.preparation && !this.preparation.signal.aborted) {
+      this.preparation.abort();
       this.emit('progress', { step: 'idle', progress: 0, message: 'Arrêt en cours de la préparation...' });
     }
     this.launcher.kill();

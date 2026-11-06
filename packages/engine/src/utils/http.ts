@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Readable, Transform } from 'stream';
 import { pipeline } from 'stream/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import { computeFileHashes } from './hasher.js';
 
 export interface DownloadOptions {
@@ -10,6 +11,7 @@ export interface DownloadOptions {
   expectedSize?: number;
   onProgress?: (transferredBytes: number, totalBytes: number) => void;
   maxRetries?: number;
+  signal?: AbortSignal;
 }
 
 export async function downloadFile(
@@ -17,7 +19,8 @@ export async function downloadFile(
   destPath: string,
   options: DownloadOptions = {}
 ): Promise<void> {
-  const { expectedSha1, expectedSha256, expectedSize, onProgress, maxRetries = 3 } = options;
+  const { expectedSha1, expectedSha256, expectedSize, onProgress, maxRetries = 3, signal } = options;
+  signal?.throwIfAborted();
 
   // Check if file already exists and matches expected hashes
   if (fs.existsSync(destPath)) {
@@ -50,8 +53,9 @@ export async function downloadFile(
     const tempPath = `${destPath}.tmp.${process.pid}.${Date.now()}`;
 
     try {
+      const deadline = AbortSignal.timeout(120000);
       const response = await fetch(url, {
-        signal: AbortSignal.timeout(120000),
+        signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
         headers: {
           'User-Agent': 'PackPanel-Launcher-Engine/2.0'
         }
@@ -88,6 +92,7 @@ export async function downloadFile(
       }
 
       // Atomic rename
+      signal?.throwIfAborted();
       fs.renameSync(tempPath, destPath);
       return;
     } catch (err: any) {
@@ -95,18 +100,18 @@ export async function downloadFile(
       if (fs.existsSync(tempPath)) {
         try { fs.unlinkSync(tempPath); } catch (e) {}
       }
-      if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, 1000 * attempt));
-      }
+      signal?.throwIfAborted();
+      if (attempt < maxRetries) await delay(1000 * attempt, undefined, { signal });
     }
   }
 
   throw lastError || new Error(`Échec du téléchargement de ${url}`);
 }
 
-export async function fetchJson<T = any>(url: string): Promise<T> {
+export async function fetchJson<T = any>(url: string, signal?: AbortSignal): Promise<T> {
+  const deadline = AbortSignal.timeout(30000);
   const response = await fetch(url, {
-    signal: AbortSignal.timeout(30000),
+    signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
     headers: {
       'User-Agent': 'PackPanel-Launcher-Engine/2.0',
       'Accept': 'application/json'

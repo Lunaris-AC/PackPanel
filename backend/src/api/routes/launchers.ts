@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, requireRole, recordAuditLog } from '../../auth/middleware';
+import { authenticateRequest, canManageLauncherInstances, requireRole, recordAuditLog } from '../../auth/middleware';
 import { config, getFilesBaseUrl } from '../../config';
 
 const LauncherCreateSchema = z.object({
@@ -17,7 +17,7 @@ const LauncherCreateSchema = z.object({
   authOffline: z.boolean().default(true),
   discordUrl: z.string().url().optional(),
   websiteUrl: z.string().url().optional(),
-  instanceIds: z.array(z.string().uuid()).optional()
+  instanceIds: z.array(z.string().uuid()).transform(ids => [...new Set(ids)]).optional()
 });
 
 const LauncherUpdateSchema = LauncherCreateSchema.partial();
@@ -88,6 +88,9 @@ export async function launcherRoutes(fastify: FastifyInstance) {
 
     const data = parsed.data;
 
+    if (!await canManageLauncherInstances(req.user!, null, data.instanceIds)) {
+      return reply.status(403).send({ error: 'Droits insuffisants sur les instances du launcher' });
+    }
     // Check slug uniqueness
     const existing = await query('SELECT id FROM launcher_projects WHERE slug = $1', [data.slug]);
     if (existing.rows.length > 0) {
@@ -153,15 +156,13 @@ export async function launcherRoutes(fastify: FastifyInstance) {
     }
 
     const data = parsed.data;
-    const existing = await query('SELECT * FROM launcher_projects WHERE id::text = $1 OR slug = $1', [id]);
-    if (existing.rows.length === 0) {
-      return reply.status(404).send({ error: 'Projet de launcher introuvable' });
-    }
-
-    const current = existing.rows[0];
-    const targetId = current.id;
-
     const updated = await withTransaction(async (client) => {
+      const existing = await client.query('SELECT id FROM launcher_projects WHERE id::text = $1 OR slug = $1 FOR UPDATE', [id]);
+      const targetId = existing.rows[0]?.id;
+      if (!targetId) return { error: 'missing' } as const;
+      if (!await canManageLauncherInstances(req.user!, targetId, data.instanceIds, client.query.bind(client) as typeof query)) {
+        return { error: 'forbidden' } as const;
+      }
       const res = await client.query(
         `UPDATE launcher_projects
          SET name = COALESCE($1, name),
@@ -205,11 +206,13 @@ export async function launcherRoutes(fastify: FastifyInstance) {
         }
       }
 
-      return res.rows[0];
+      return { launcher: res.rows[0] };
     });
 
-    await recordAuditLog(req.user!.userId, 'update', 'launcher_project', targetId, data, req.ip);
-    return reply.send({ launcher: updated });
+    if (updated.error === 'missing') return reply.status(404).send({ error: 'Projet de launcher introuvable' });
+    if (updated.error === 'forbidden') return reply.status(403).send({ error: 'Droits insuffisants sur les instances du launcher' });
+    await recordAuditLog(req.user!.userId, 'update', 'launcher_project', updated.launcher.id, data, req.ip);
+    return reply.send({ launcher: updated.launcher });
   });
 
   // 5. Delete launcher project

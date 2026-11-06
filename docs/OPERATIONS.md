@@ -40,4 +40,4 @@ On failure, inspect the error before restarting applications. After restoration,
 
 `GET/PUT /api/system/public-config` reads/writes administrator-controlled distribution settings. They persist in `$DATA_DIR/public-config.json`; the worker reloads them periodically. Production defaults to HTTPS for the files domain. An explicit HTTP base URL is intended for LAN validation.
 
-The public distribution port serves static files and excludes `/api`, hidden files and incoming uploads. The panel/API belongs on its separate listener and reverse-proxy domain.
+The public distribution port serves static files and the player page under `/play/:slug`. It forwards only public player requests under `/play-api/` and drops session headers. The administrative `/api`, hidden files and incoming uploads are unavailable on this listener.

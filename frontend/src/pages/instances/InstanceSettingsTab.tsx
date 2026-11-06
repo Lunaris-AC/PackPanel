@@ -23,7 +23,8 @@ interface InstanceSettingsTabProps {
 }
 
 export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instance, onRefresh }) => {
-  const { tr } = useTranslation();
+  const { tr, language } = useTranslation();
+  const text = (fr: string, en: string) => language === 'fr' ? fr : en;
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -37,8 +38,9 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
   const [loaderType, setLoaderType] = useState<LoaderType>(instance.loader_type);
   const [loaderVersion, setLoaderVersion] = useState<string>(instance.loader_version || '');
   const [javaVersion, setJavaVersion] = useState<number>(instance.java_version);
-  const [javaArgs, setJavaArgs] = useState<string>(instance.java_args || '-Xms2G -Xmx4G');
+  const [javaArgs, setJavaArgs] = useState<string>(instance.java_args ?? '');
   const [serverAddress, setServerAddress] = useState(instance.server_address || '');
+  const [optionalFiles, setOptionalFiles] = useState<string>((instance.file_policies?.optional_mods || []).join('\n'));
 
   // Catalog State
   const [mcVersions, setMcVersions] = useState<MinecraftVersionSummary[]>([]);
@@ -90,7 +92,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
       try {
         const requirements = await catalogApi.getRequirements(minecraftVersion, loaderType);
         if (!active) return;
-        setJavaVersion(requirements.requirements.majorVersion);
+        setJavaVersion(current => Math.max(current, requirements.requirements.majorVersion));
         if (loaderType !== 'vanilla') {
           const res = await catalogApi.getLoaderVersions(loaderType, minecraftVersion);
           if (!active) return;
@@ -131,7 +133,11 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         loaderVersion: loaderType === 'vanilla' ? null : (loaderVersion || null),
         javaVersion,
         javaArgs,
-        serverAddress: serverAddress.trim() || null
+        serverAddress: serverAddress.trim() || null,
+        filePolicies: {
+          protected_paths: instance.file_policies?.protected_paths,
+          optional_mods: [...new Set(optionalFiles.split(/\r?\n/).map(file => file.trim()).filter(Boolean))]
+        }
       });
 
       toast.success(tr("Paramètres enregistrés en brouillon. N’oubliez pas de publier pour déployer aux joueurs !"));
@@ -332,10 +338,18 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         </div>
 
         {catalogError && <p role="alert" className="text-xs text-rose-600">{catalogError}</p>}
+        <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+          {text('Fichiers facultatifs pour les joueurs', 'Optional files for players')}
+          <span className="block mt-1 font-normal text-zinc-500 dark:text-zinc-400">
+            {text('Ajoutez les chemins de fichiers déjà présents dans le pack, un par ligne. Après publication, les joueurs pourront les activer dans le launcher.', 'Enter one existing pack file path per line. Players can enable those files in the launcher after publication.')}
+          </span>
+          <textarea rows={3} value={optionalFiles} onChange={event => setOptionalFiles(event.target.value)} placeholder="mods/example.jar"
+            className="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent p-3 font-mono" />
+        </label>
         <div className="flex justify-end pt-4 border-t border-zinc-100 dark:border-zinc-800">
           <button
             type="submit"
-            disabled={saving || loadingCatalog || !!catalogError || (loaderType !== 'vanilla' && !loaderVersion)}
+            disabled={instance.permissions?.can_write === false || saving || loadingCatalog || !!catalogError || (loaderType !== 'vanilla' && !loaderVersion)}
             className="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-semibold text-xs rounded-xl shadow-xs transition flex items-center gap-2 disabled:opacity-60"
           >
             <Save className="w-4 h-4" />

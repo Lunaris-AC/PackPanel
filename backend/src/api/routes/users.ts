@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { query } from '../../db';
+import { query, withTransaction } from '../../db';
 import { authenticateRequest, requireRole, recordAuditLog } from '../../auth/middleware';
 import { hashPassword } from '../../auth/argon2';
 
@@ -139,7 +139,7 @@ export async function userRoutes(fastify: FastifyInstance) {
        LEFT JOIN users u ON u.id = a.user_id
        ORDER BY a.created_at DESC
        LIMIT $1 OFFSET $2`,
-      [Math.min(Number(limit) || 50, 100), Number(offset) || 0]
+      [Math.max(1, Math.min(Math.trunc(Number(limit)) || 50, 100)), Math.max(0, Math.trunc(Number(offset)) || 0)]
     );
 
     const countRes = await query('SELECT COUNT(*) FROM audit_logs');
@@ -185,20 +185,26 @@ export async function userRoutes(fastify: FastifyInstance) {
 
     const { permissions } = parsed.data;
 
-    // Delete existing permissions for this user
-    await query('DELETE FROM user_endpoint_permissions WHERE user_id = $1', [userId]);
+    const updated = await withTransaction(async client => {
+      const user = await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      if (!user.rowCount) return false;
+      const active = permissions.filter(p => p.can_write || p.can_publish);
+      const ids = [...new Set(active.map(p => p.endpoint_id))];
+      const endpoints = await client.query('SELECT id FROM endpoints WHERE id = ANY($1::uuid[]) FOR KEY SHARE', [ids]);
+      if (endpoints.rowCount !== ids.length) return false;
 
-    // Insert new permissions where at least one permission is true
-    for (const p of permissions) {
-      if (p.can_write || p.can_publish) {
-        await query(
+      await client.query('DELETE FROM user_endpoint_permissions WHERE user_id = $1', [userId]);
+      for (const p of active) {
+        await client.query(
           `INSERT INTO user_endpoint_permissions (user_id, endpoint_id, can_write, can_publish)
            VALUES ($1, $2, $3, $4)
            ON CONFLICT (user_id, endpoint_id) DO UPDATE SET can_write = $3, can_publish = $4`,
           [userId, p.endpoint_id, p.can_write, p.can_publish]
         );
       }
-    }
+      return true;
+    });
+    if (!updated) return reply.status(404).send({ error: 'Utilisateur ou endpoint introuvable' });
 
     await recordAuditLog(req.user!.userId, 'update_permissions', 'user', userId, {
       count: permissions.length

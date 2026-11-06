@@ -21,15 +21,19 @@ import { Modal } from '../components/Modal';
 
 interface VersionsPageProps {
   endpointId: string;
+  refreshKey?: string | null;
+  onRollback?: () => void;
+  draftReleaseId?: string | null;
+  canPublish?: boolean;
 }
 
 
 
-export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId }) => {
+export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId, refreshKey, onRollback, draftReleaseId, canPublish }) => {
   const { tr } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
-  const canEdit = user?.role === 'admin' || user?.role === 'operator';
+  const canEdit = canPublish ?? (user?.role === 'admin' || user?.role === 'operator');
 
   const [versions, setVersions] = useState<Release[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +53,8 @@ export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId }) => {
   const loadVersions = async () => {
     try {
       const res = await api.get<{ versions: Release[] }>(`/endpoints/${endpointId}/versions`);
-      setVersions(res.versions);
+      setVersions(draftReleaseId === undefined ? res.versions : res.versions.filter(version =>
+        version.status !== 'draft' || version.release_id === draftReleaseId));
     } catch (e: any) {
       toast.error(tr("Erreur chargement des versions"));
     } finally {
@@ -59,7 +64,7 @@ export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId }) => {
 
   useEffect(() => {
     loadVersions();
-  }, [endpointId]);
+  }, [endpointId, refreshKey, draftReleaseId]);
 
   const handleTogglePin = async (ver: Release) => {
     try {
@@ -80,6 +85,7 @@ export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId }) => {
     try {
       await api.post(`/endpoints/${endpointId}/versions/${ver.id}/rollback`);
       toast.success(tr("Retour arrière réussi vers {0} !", { 0: ver.release_id }));
+      onRollback?.();
       loadVersions();
     } catch (e: any) {
       toast.error(e.message || tr("Erreur rollback"));
@@ -177,7 +183,7 @@ export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId }) => {
                         <CheckCircle className="w-3 h-3 mr-1" />  {tr("Active")} </span>
                     ) : (
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        {tr("Archivée")} </span>
+                        {tr(ver.status === 'draft' ? "Brouillon" : "Archivée")} </span>
                     )}
                   </td>
 
@@ -229,7 +235,7 @@ export const VersionsPage: React.FC<VersionsPageProps> = ({ endpointId }) => {
                             <Pin className="w-4 h-4" />
                           </button>
 
-                          {!ver.is_active && (
+                          {!ver.is_active && ver.status !== 'draft' && (
                             <button
                               onClick={() => handleRollback(ver)}
                               title={tr("Restaurer immédiatement cette version")}

@@ -9,7 +9,7 @@ HOST="${1:-127.0.0.1}"
 ADMIN_PORT="${2:-8080}"
 FILES_PORT="${3:-8081}"
 
-echo "[1/4] Test du listener d'administration (port $ADMIN_PORT)..."
+echo "[1/5] Test du listener d'administration (port $ADMIN_PORT)..."
 HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${HOST}:${ADMIN_PORT}/api/health" || true)
 if [ "$HEALTH_STATUS" -eq 200 ]; then
   echo "  ✓ API et Panel opérationnels (HTTP 200 sur /api/health)"
@@ -18,7 +18,7 @@ else
   exit 1
 fi
 
-echo "[2/4] Test du listener de distribution MineLaunched (port $FILES_PORT)..."
+echo "[2/5] Test du listener de distribution MineLaunched (port $FILES_PORT)..."
 # Missing file must return 404, never 200 empty array
 FILES_404_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${HOST}:${FILES_PORT}/nonexistent_endpoint/index.php" || true)
 if [ "$FILES_404_STATUS" -eq 404 ]; then
@@ -28,7 +28,7 @@ else
   exit 1
 fi
 
-echo "[3/4] Vérification de l'étanchéité du listener public (port $FILES_PORT)..."
+echo "[3/5] Vérification de l'étanchéité du listener public (port $FILES_PORT)..."
 # Port 8081 must NEVER give access to /api/
 LEAK_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${HOST}:${FILES_PORT}/api/health" || true)
 if [ "$LEAK_STATUS" -eq 404 ]; then
@@ -38,12 +38,20 @@ else
   exit 1
 fi
 
-echo "[4/4] Test du service Web SPA (port $ADMIN_PORT)..."
+echo "[4/5] Test du service Web SPA (port $ADMIN_PORT)..."
 SPA_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${HOST}:${ADMIN_PORT}/" || true)
 if [ "$SPA_STATUS" -eq 200 ]; then
   echo "  ✓ Interface web React servie correctement (HTTP 200)"
 else
   echo "  ✗ ÉCHEC : Code HTTP $SPA_STATUS sur l'interface SPA"
+  exit 1
+fi
+
+echo "[5/5] Test de la page joueur sur le CDN..."
+curl --fail --silent --show-error "http://${HOST}:${FILES_PORT}/play/packpanel-smoke-no-such-instance" >/dev/null
+PLAYER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://${HOST}:${FILES_PORT}/play-api/packpanel-smoke-no-such-instance" || true)
+if [ "$PLAYER_STATUS" -ne 404 ]; then
+  echo "  ✗ ÉCHEC : la page d'un pack indisponible doit renvoyer HTTP 404 sur l'API joueur, reçu $PLAYER_STATUS"
   exit 1
 fi
 

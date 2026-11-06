@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
@@ -8,7 +8,7 @@ import { config, STAGING_DIR } from '../../config';
 import { getCasObjectPath, storeBufferInCas, linkObjectToRelease } from '../../storage/cas';
 import { hashBuffer } from '../../storage/hasher';
 import { assertSanitizedRelativePath } from '../../storage/paths';
-import { handleSealAndBuildRelease } from '../../jobs/handlers/publish';
+import { getWorkingRelease, handleSealAndBuildRelease } from '../../jobs/handlers/publish';
 
 const TEXT_EXTENSIONS = new Set([
   '.txt', '.json', '.json5', '.toml', '.cfg', '.conf', '.properties',
@@ -20,14 +20,27 @@ const IMAGE_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.ico'
 ]);
 
+async function getExplorerRelease(endpointId: string, draft?: string) {
+  if (draft === 'true') return getWorkingRelease(endpointId);
+  const result = await query('SELECT * FROM releases WHERE endpoint_id = $1 AND is_active LIMIT 1', [endpointId]);
+  return result.rows[0] ?? null;
+}
+
+const requireWrite = requireEndpointPermission('can_write');
+const requirePublish = requireEndpointPermission('can_publish');
+function requireExplorerPermission(req: FastifyRequest, reply: FastifyReply) {
+  return ((req.query as { draft?: string }).draft === 'true' ? requireWrite : requirePublish)(req, reply);
+}
+
 export async function explorerRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticateRequest);
 
   // List files/folders in an endpoint release
   fastify.get('/endpoints/:id/explorer', async (req, reply) => {
     const { id: endpointId } = req.params as { id: string };
-    const { releaseId, prefix = '', search = '' } = req.query as {
+    const { releaseId, draft, prefix = '', search = '' } = req.query as {
       releaseId?: string;
+      draft?: string;
       prefix?: string;
       search?: string;
     };
@@ -46,14 +59,8 @@ export async function explorerRoutes(fastify: FastifyInstance) {
         targetRelId = releaseInfo.id;
       }
     } else {
-      const relRes = await query(
-        'SELECT * FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1',
-        [endpointId]
-      );
-      if (relRes.rows.length > 0) {
-        releaseInfo = relRes.rows[0];
-        targetRelId = releaseInfo.id;
-      }
+      releaseInfo = await getExplorerRelease(endpointId, draft);
+      targetRelId = releaseInfo?.id ?? null;
     }
 
     if (!targetRelId) {
@@ -253,6 +260,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_write')]
   }, async (req, reply) => {
     const { id: endpointId } = req.params as { id: string };
+    const { draft } = req.query as { draft?: string };
     const schema = z.object({
       path: z.string().min(1),
       content: z.string(),
@@ -265,7 +273,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     }
 
     const { path: rawPath, content, commitNow } = parsed.data;
-    if (commitNow) {
+    if (commitNow && draft !== 'true') {
       await requireEndpointPermission('can_publish')(req, reply);
       if (reply.sent) return;
     }
@@ -287,15 +295,12 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     await storeBufferInCas(buf, sha256, sha1);
 
 
-    const activeRelRes = await query(
-      'SELECT id FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1',
-      [endpointId]
-    );
+    const base = await getExplorerRelease(endpointId, draft);
     let existingFile: any = null;
-    if (activeRelRes.rows.length > 0) {
+    if (base) {
       const efRes = await query(
         'SELECT sha256, sha1, size_bytes FROM release_files WHERE release_id = $1 AND relative_path = $2',
-        [activeRelRes.rows[0].id, sanitizedPath]
+        [base.id, sanitizedPath]
       );
       if (efRes.rows.length > 0) {
         existingFile = efRes.rows[0];
@@ -304,9 +309,9 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     const sessRes = await query(
       `INSERT INTO upload_sessions (endpoint_id, user_id, mode, source_type, status, total_files, processed_files, failed_files)
-       VALUES ($1, $2, 'add_replace', 'manual', 'uploading', 1, 1, 0)
+       VALUES ($1, $2, 'add_replace', 'manual', $3, 1, 1, 0)
        RETURNING id`,
-      [endpointId, req.user!.userId]
+      [endpointId, req.user!.userId, commitNow || draft === 'true' ? 'completed' : 'uploading']
     );
     const sessionId = sessRes.rows[0].id;
 
@@ -322,8 +327,8 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       [sessionId, sanitizedPath, stagedFile, buf.length, buf.length, sha256, sha1]
     );
 
-    if (commitNow) {
-      await handleSealAndBuildRelease({ sessionId, immediatePublish: true });
+    if (commitNow || draft === 'true') {
+      await handleSealAndBuildRelease({ sessionId, immediatePublish: draft !== 'true' });
       
       // Record history entry
       const action = existingFile ? 'edit' : 'create';
@@ -351,9 +356,11 @@ export async function explorerRoutes(fastify: FastifyInstance) {
         path: sanitizedPath,
         sha1,
         sha256,
-        committed: true
+        committed: draft !== 'true'
       }, req.ip);
-      return reply.send({ success: true, message: 'Fichier enregistré et nouvelle version publiée avec succès' });
+      return reply.send({ success: true, message: draft === 'true'
+        ? 'Fichier enregistré dans le brouillon.'
+        : 'Fichier enregistré et nouvelle version publiée avec succès' });
     }
 
     await recordAuditLog(req.user!.userId, 'edit_file', 'endpoint', endpointId, {
@@ -368,9 +375,10 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
   // Batch Upload from Drag & Drop or File Selector
   fastify.post('/endpoints/:id/explorer/upload-batch', {
-    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')]
+    preHandler: [requireRole(['admin', 'operator']), requireExplorerPermission]
   }, async (req, reply) => {
     const { id: endpointId } = req.params as { id: string };
+    const { draft } = req.query as { draft?: string };
     const schema = z.object({
       files: z.array(z.object({
         path: z.string().min(1),
@@ -384,7 +392,10 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: parsed.error.issues[0].message });
     }
 
-    const { files } = parsed.data;
+    const files = parsed.data.files.map(file => ({ ...file, path: assertSanitizedRelativePath(file.path) }));
+    if (new Set(files.map(file => file.path.toLowerCase())).size !== files.length) {
+      return reply.status(400).send({ error: 'Le lot contient plusieurs fichiers avec le même chemin.' });
+    }
 
     const epRes = await query('SELECT * FROM endpoints WHERE id = $1', [endpointId]);
     if (epRes.rows.length === 0) {
@@ -392,15 +403,12 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     }
 
     // Get active release files map for history tracking
-    const activeRelRes = await query(
-      'SELECT id FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1',
-      [endpointId]
-    );
+    const base = await getExplorerRelease(endpointId, draft);
     const existingMap = new Map<string, { sha256: string; sha1: string; size: number }>();
-    if (activeRelRes.rows.length > 0) {
+    if (base) {
       const existingFiles = await query(
         'SELECT relative_path, sha256, sha1, size_bytes FROM release_files WHERE release_id = $1',
-        [activeRelRes.rows[0].id]
+        [base.id]
       );
       for (const ef of existingFiles.rows) {
         existingMap.set(ef.relative_path, {
@@ -422,12 +430,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     fs.mkdirSync(sessionStaging, { recursive: true, mode: 0o750 });
 
     for (const f of files) {
-      let sanitizedPath: string;
-      try {
-        sanitizedPath = assertSanitizedRelativePath(f.path);
-      } catch (err: any) {
-        continue;
-      }
+      const sanitizedPath = f.path;
 
       let buf: Buffer;
       if (f.contentBase64) {
@@ -472,7 +475,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       );
     }
 
-    await handleSealAndBuildRelease({ sessionId });
+    await handleSealAndBuildRelease({ sessionId, immediatePublish: draft === 'true' ? false : undefined });
 
     await recordAuditLog(req.user!.userId, 'upload_batch', 'endpoint', endpointId, {
       fileCount: files.length
@@ -481,15 +484,18 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     return reply.send({
       success: true,
       count: files.length,
-      message: `${files.length} fichier(s) téléversé(s) et nouvelle version publiée avec succès`
+      message: draft === 'true' || !epRes.rows[0].auto_publish
+        ? `${files.length} fichier(s) ajoutés au brouillon.`
+        : `${files.length} fichier(s) téléversé(s) et nouvelle version publiée avec succès`
     });
   });
 
   // Delete file or directory from active release
   fastify.post('/endpoints/:id/explorer/delete', {
-    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')]
+    preHandler: [requireRole(['admin', 'operator']), requireExplorerPermission]
   }, async (req, reply) => {
     const { id: endpointId } = req.params as { id: string };
+    const { draft } = req.query as { draft?: string };
     const schema = z.object({
       path: z.string().min(1)
     });
@@ -507,31 +513,22 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: err.message });
     }
 
-    const activeRelRes = await query(
-      'SELECT * FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1',
-      [endpointId]
-    );
-
-    if (activeRelRes.rows.length === 0) {
+    const activeRelease = await getExplorerRelease(endpointId, draft);
+    if (!activeRelease) {
       return reply.status(404).send({ error: 'Aucune version active trouvée' });
     }
-
-    const activeRelease = activeRelRes.rows[0];
 
     const filesRes = await query(
       'SELECT relative_path, sha256, sha1, size_bytes, is_dir FROM release_files WHERE release_id = $1',
       [activeRelease.id]
     );
 
-    const deletedFile = filesRes.rows.find(f => f.relative_path === targetPath);
+    const matches = (file: { relative_path: string }) => file.relative_path === targetPath ||
+      (isExplicitDir && file.relative_path.startsWith(targetPath));
+    const removed = filesRes.rows.filter(matches);
+    const remainingFiles = filesRes.rows.filter(f => !f.is_dir && !matches(f));
 
-    const remainingFiles = filesRes.rows.filter(f => {
-      if (f.relative_path === targetPath) return false;
-      if (isExplicitDir && f.relative_path.startsWith(targetPath)) return false;
-      return true;
-    });
-
-    if (remainingFiles.length === filesRes.rows.length) {
+    if (!removed.length) {
       return reply.status(404).send({ error: 'Élément introuvable dans la version active' });
     }
 
@@ -553,9 +550,9 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       );
     }
 
-    await handleSealAndBuildRelease({ sessionId });
+    await handleSealAndBuildRelease({ sessionId, allowEmptySnapshot: true, immediatePublish: draft === 'true' ? false : undefined });
 
-    if (deletedFile) {
+    for (const deletedFile of removed.filter(file => !file.is_dir)) {
       await query(
         `INSERT INTO file_history (
            endpoint_id, user_id, action, relative_path,
@@ -565,7 +562,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
         [
           endpointId,
           req.user!.userId,
-          targetPath,
+          deletedFile.relative_path,
           deletedFile.sha256,
           deletedFile.sha1,
           Number(deletedFile.size_bytes)
@@ -578,7 +575,9 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       remainingCount: remainingFiles.length
     }, req.ip);
 
-    return reply.send({ success: true, message: 'Élément supprimé et nouvelle version publiée' });
+    return reply.send({ success: true, message: draft === 'true'
+      ? 'Suppression enregistrée dans le brouillon.'
+      : 'Élément supprimé et nouvelle version préparée' });
   });
 
   // Get File History for this endpoint
@@ -601,9 +600,10 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
   // Undo a specific file change
   fastify.post('/endpoints/:id/explorer/undo/:historyId', {
-    preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_publish')]
+    preHandler: [requireRole(['admin', 'operator']), requireExplorerPermission]
   }, async (req, reply) => {
     const { id: endpointId, historyId } = req.params as { id: string; historyId: string };
+    const { draft } = req.query as { draft?: string };
 
     const histRes = await query(
       `SELECT * FROM file_history WHERE id = $1 AND endpoint_id = $2`,
@@ -616,19 +616,14 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     const record = histRes.rows[0];
 
-    const activeRelRes = await query(
-      `SELECT id FROM releases WHERE endpoint_id = $1 AND is_active = TRUE LIMIT 1`,
-      [endpointId]
-    );
-
-    if (activeRelRes.rows.length === 0) {
+    const base = await getExplorerRelease(endpointId, draft);
+    if (!base) {
       return reply.status(404).send({ error: 'Aucune version active trouvée' });
     }
 
-    const activeReleaseId = activeRelRes.rows[0].id;
     const existingFilesRes = await query(
-      `SELECT relative_path, sha256, sha1, size_bytes, is_dir FROM release_files WHERE release_id = $1`,
-      [activeReleaseId]
+      `SELECT relative_path, sha256, sha1, size_bytes, is_dir FROM release_files WHERE release_id = $1 AND NOT is_dir`,
+      [base.id]
     );
 
     const fileMap = new Map<string, { sha256: string; sha1: string; size: number; isDir: boolean }>();
@@ -639,6 +634,10 @@ export async function explorerRoutes(fastify: FastifyInstance) {
         size: Number(f.size_bytes),
         isDir: f.is_dir
       });
+    }
+
+    if (record.action !== 'undo' && (fileMap.get(record.relative_path)?.sha256 ?? null) !== record.new_sha256) {
+      return reply.status(409).send({ error: 'Le fichier a changé depuis cette modification. Annulez les modifications plus récentes en premier.' });
     }
 
     if (record.action === 'create') {
@@ -688,7 +687,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       );
     }
 
-    await handleSealAndBuildRelease({ sessionId });
+    await handleSealAndBuildRelease({ sessionId, allowEmptySnapshot: true, immediatePublish: draft === 'true' ? false : undefined });
 
     await query(
       `INSERT INTO file_history (
@@ -717,7 +716,8 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     return reply.send({
       success: true,
-      message: `Modification annulée pour "${record.relative_path}". Nouvelle version publiée avec succès.`
+      message: draft === 'true' ? 'Annulation enregistrée dans le brouillon.'
+        : `Modification annulée pour "${record.relative_path}". Nouvelle version préparée.`
     });
   });
 }

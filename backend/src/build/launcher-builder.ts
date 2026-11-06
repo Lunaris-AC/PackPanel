@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
-import { query } from '../db';
+import { pipeline } from 'stream/promises';
+import { query, withTransaction } from '../db';
 import { config, DATA_DIR, getFilesBaseUrl } from '../config';
 import { appendDesktopRuntime } from './desktop-package';
+import { hashFile } from '../storage/hasher';
+import { JobQueue } from '../jobs/queue';
 
 function createZipArchive(options: any) {
   const archiverModule = require('archiver');
@@ -25,63 +27,65 @@ export interface BuildLauncherOptions {
   launcherProjectId: string;
   targetOs: 'windows' | 'linux' | 'macos' | 'all';
   userId?: string;
-  instanceId?: string;
+  instanceId: string;
 }
 
-export async function buildLauncherArtifact(options: BuildLauncherOptions): Promise<{
+export async function reserveLauncherBuild(options: BuildLauncherOptions, background: boolean) {
+  return withTransaction(async client => {
+    const { launcherProjectId, targetOs, userId, instanceId } = options;
+    const project = await client.query('SELECT id FROM launcher_projects WHERE id = $1 FOR UPDATE', [launcherProjectId]);
+    if (!project.rowCount) return null;
+    const existing = await client.query(
+      `SELECT id, version FROM launcher_builds WHERE launcher_project_id = $1 AND target_os = $2
+       AND (instance_id = $3 OR instance_id IS NULL) AND status IN ('pending', 'building')`,
+      [launcherProjectId, targetOs, instanceId]
+    );
+    if (existing.rowCount) return { ...existing.rows[0], existing: true };
+
+    const count = await client.query('SELECT COUNT(*) FROM launcher_builds WHERE launcher_project_id = $1', [launcherProjectId]);
+    const version = `1.0.${Number(count.rows[0].count) + 1}`;
+    const result = await client.query(
+      `INSERT INTO launcher_builds (launcher_project_id, version, target_os, status, logs, created_by_user_id, instance_id)
+       VALUES ($1, $2, $3, $4, '', $5, $6) RETURNING id, version, target_os, status, created_at, instance_id`,
+      [launcherProjectId, version, targetOs, background ? 'pending' : 'building', userId ?? null, instanceId]
+    );
+    const build = result.rows[0];
+    if (background) {
+      await JobQueue.enqueue('build_launcher', { buildId: build.id, instanceId }, 0, 1, client.query.bind(client) as typeof query);
+    }
+    return build;
+  });
+}
+
+export async function buildLauncherArtifact(buildId: string, instanceId: string): Promise<{
   buildId: string;
   artifactPath: string;
   artifactSize: number;
   artifactSha256: string;
   version: string;
-}> {
-  const { launcherProjectId, targetOs, userId } = options;
-
-  if (!fs.existsSync(BUILDS_DIR)) {
-    fs.mkdirSync(BUILDS_DIR, { recursive: true, mode: 0o755 });
-  }
-
-  // 1. Fetch launcher project details
-  const projRes = await query('SELECT * FROM launcher_projects WHERE id = $1', [launcherProjectId]);
-  if (projRes.rows.length === 0) {
-    throw new Error('Projet de launcher introuvable');
-  }
-  const proj = projRes.rows[0];
-
-  // 2. Count existing builds to generate version e.g. 1.0.1
-  const countRes = await query(
-    'SELECT COUNT(*) FROM launcher_builds WHERE launcher_project_id = $1',
-    [launcherProjectId]
-  );
-  const buildNum = parseInt(countRes.rows[0].count, 10) + 1;
-  const version = `1.0.${buildNum}`;
-
-  // 3. Create build record with status 'building'
+} | null> {
   const buildRes = await query(
-    `INSERT INTO launcher_builds (
-      launcher_project_id, version, target_os, status, logs, created_by_user_id
-    ) VALUES ($1, $2, $3, 'building', $4, $5)
-    RETURNING id`,
-    [
-      launcherProjectId,
-      version,
-      targetOs,
-      `[${new Date().toISOString()}] Initialisation du build ${version} pour ${targetOs}...\n`,
-      userId || null
-    ]
-  );
-  const buildId = buildRes.rows[0].id;
-
+    `SELECT p.*, b.version, b.target_os FROM launcher_builds b JOIN launcher_projects p ON p.id = b.launcher_project_id
+     WHERE b.id = $1 AND b.status IN ('pending', 'building')`, [buildId]);
+  const proj = buildRes.rows[0];
+  if (!proj) return null;
+  const { version, target_os: targetOs } = proj as { version: string; target_os: BuildLauncherOptions['targetOs'] };
+  const artifactFilename = `launcher-${proj.slug}-${targetOs}-v${version}-${buildId}.zip`;
+  const artifactPath = path.join(BUILDS_DIR, artifactFilename);
+  const temporaryPath = artifactPath + '.part';
   try {
+    await fs.promises.mkdir(BUILDS_DIR, { recursive: true, mode: 0o755 });
+    await query("UPDATE launcher_builds SET status = 'building', logs = $2 WHERE id = $1",
+      [buildId, `[${new Date().toISOString()}] Initialisation du build ${version} pour ${targetOs}...\n`]);
     // 4. Fetch linked instances
     const instRes = await query(
       `SELECT i.*, lpi.is_default, e.slug as endpoint_slug
        FROM launcher_project_instances lpi
        JOIN instances i ON i.id = lpi.instance_id
        LEFT JOIN endpoints e ON e.id = i.endpoint_id
-       WHERE lpi.launcher_project_id = $1 AND ($2::uuid IS NULL OR i.id = $2)
+       WHERE lpi.launcher_project_id = $1 AND i.id = $2
        ORDER BY lpi.sort_order ASC`,
-      [launcherProjectId, options.instanceId || null]
+      [proj.id, instanceId]
     );
     if (instRes.rows.length === 0) throw new Error('Associez au moins une instance au launcher avant de le générer.');
 
@@ -114,25 +118,13 @@ export async function buildLauncherArtifact(options: BuildLauncherOptions): Prom
       }))
     };
 
-    const artifactFilename = `launcher-${proj.slug}-${targetOs}-v${version}-${buildId}.zip`;
-    const artifactPath = path.join(BUILDS_DIR, artifactFilename);
+    const archive = createZipArchive({ zlib: { level: 3 } });
+    const output = fs.createWriteStream(temporaryPath);
+    const controller = new AbortController();
 
-    // Create zip archive
-    await new Promise<void>((resolve, reject) => {
-      const output = fs.createWriteStream(artifactPath);
-      const archive = createZipArchive({ zlib: { level: 9 } });
+    archive.append(JSON.stringify(launcherConfig, null, 2), { name: 'packpanel-launcher.json' });
 
-      output.on('close', resolve);
-      output.on('error', reject);
-      archive.on('error', reject);
-
-      archive.pipe(output);
-
-      // 1. Config file
-      archive.append(JSON.stringify(launcherConfig, null, 2), { name: 'packpanel-launcher.json' });
-
-      // 2. README & Instructions
-      const readme = `# ${proj.title}
+    const readme = `# ${proj.title}
 Version: ${version}
 Plateforme cible: ${targetOs}
 Généré le: ${new Date().toISOString()}
@@ -147,25 +139,34 @@ Lancement :
 - Linux : Exécutez linux/run-launcher.sh (session graphique requise)
 - macOS : Ouvrez macos/Electron.app
 `;
-      archive.append(readme, { name: 'README.txt' });
+    archive.append(readme, { name: 'README.txt' });
 
-      const targets = targetOs === 'all' ? ['windows', 'linux', 'macos'] as const : [targetOs];
-      (async () => {
-        for (const target of targets) await appendDesktopRuntime(archive, target, launcherConfig);
+    const targets = targetOs === 'all' ? ['windows', 'linux', 'macos'] as const : [targetOs];
+    try {
+      await Promise.all([pipeline(archive, output), (async () => {
+        for (const target of targets) {
+          await query('UPDATE launcher_builds SET stage = $2 WHERE id = $1', [buildId, target]);
+          await appendDesktopRuntime(archive, target, launcherConfig, controller.signal);
+        }
+        await query("UPDATE launcher_builds SET stage = 'archiving' WHERE id = $1", [buildId]);
         await archive.finalize();
-      })().catch(error => { archive.abort(); output.destroy(); reject(error); });
-    });
+      })()]);
+    } catch (error) {
+      controller.abort();
+      archive.destroy();
+      output.destroy();
+      throw error;
+    }
 
-    // 5. Compute SHA256 and size
-    const fileBuf = fs.readFileSync(artifactPath);
-    const artifactSize = fileBuf.length;
-    const artifactSha256 = crypto.createHash('sha256').update(fileBuf).digest('hex');
+    await query("UPDATE launcher_builds SET stage = 'verifying' WHERE id = $1", [buildId]);
+    const { sizeBytes: artifactSize, sha256: artifactSha256 } = await hashFile(temporaryPath);
+    await fs.promises.rename(temporaryPath, artifactPath);
 
     // 6. Update build record
     const finalLogs = `[${new Date().toISOString()}] Compilation réussie.\n` +
       `Fichier: ${artifactFilename}\nTaille: ${artifactSize} octets\nSHA256: ${artifactSha256}\n`;
 
-    await query(
+    const updated = await query(
       `UPDATE launcher_builds
        SET status = 'completed',
            artifact_path = $1,
@@ -176,6 +177,10 @@ Lancement :
        WHERE id = $5`,
       [artifactPath, artifactSize, artifactSha256, finalLogs, buildId]
     );
+    if (!updated.rowCount) {
+      await fs.promises.rm(artifactPath, { force: true });
+      return null;
+    }
 
     return {
       buildId,
@@ -185,6 +190,7 @@ Lancement :
       version
     };
   } catch (err: any) {
+    await fs.promises.rm(temporaryPath, { force: true }).catch(() => {});
     await query(
       `UPDATE launcher_builds
        SET status = 'failed',

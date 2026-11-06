@@ -1,7 +1,7 @@
 import { useTranslation } from './i18n';
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { Layout } from './components/Layout';
 import { DashboardPage } from './pages/DashboardPage';
@@ -10,6 +10,7 @@ import { NewInstanceWizard } from './pages/instances/NewInstanceWizard';
 import { InstanceDetailPage } from './pages/instances/InstanceDetailPage';
 import { JobsPage } from './pages/JobsPage';
 import { UsersPage } from './pages/UsersPage';
+import { PlayerDownloadPage } from './pages/PlayerDownloadPage';
 
 const AuthenticatedApp: React.FC = () => {
   const { user } = useAuth();
@@ -25,7 +26,7 @@ const AuthenticatedApp: React.FC = () => {
             <DashboardPage
               onNavigate={(tab) => {
                 if (tab === 'endpoints' || tab === 'instances') navigate('/instances');
-                else if (tab.startsWith('endpoint:')) navigate(`/instances/${tab.split(':')[1]}/overview`);
+                else if (tab.startsWith('instance:')) navigate(`/instances/${tab.split(':')[1]}/overview`);
                 else navigate(`/${tab}`);
               }}
             />
@@ -50,7 +51,7 @@ const AuthenticatedApp: React.FC = () => {
   );
 };
 
-export const AppContent: React.FC = () => {
+const AdminContent: React.FC = () => {
   const { tr } = useTranslation();
   const { user, loading } = useAuth();
 
@@ -69,9 +70,14 @@ export const AppContent: React.FC = () => {
     return <LoginPage />;
   }
 
-  return (
-    <BrowserRouter>
-      <AuthenticatedApp />
-    </BrowserRouter>
-  );
+  return <AuthenticatedApp />;
 };
+
+export const AppContent: React.FC = () => (
+  <BrowserRouter>
+    <Routes>
+      <Route path="/play/:slug" element={<PlayerDownloadPage />} />
+      <Route path="*" element={<AuthProvider><AdminContent /></AuthProvider>} />
+    </Routes>
+  </BrowserRouter>
+);

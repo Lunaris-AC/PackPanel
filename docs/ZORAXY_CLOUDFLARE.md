@@ -5,7 +5,7 @@ Use two domains, for example `panel.example.com` and `cdn.example.com`, with val
 | Domain | Upstream | Purpose |
 | --- | --- | --- |
 | `panel.example.com` | `http://ORIGIN_HOST:8080` | Administration panel and authenticated API |
-| `cdn.example.com` | `http://ORIGIN_HOST:8081` | Public manifests and release files |
+| `cdn.example.com` | `http://ORIGIN_HOST:8081` | Player download page, public manifests and release files |
 
 ## Zoraxy or another reverse proxy
 
@@ -20,6 +20,8 @@ Active manifests change with every publication and rollback. Bypass caching for:
 - `/*/packpanel.json`
 - `/*/index.json`
 - `/*/index.php`
+- `/play/*`
+- `/play-api/*`
 
 Files under `/*/releases/*` are immutable and can use the origin's long-lived cache headers. Do not cache authenticated panel/API responses. Respect the origin headers instead of forcing a cache-everything rule over both domains.
 

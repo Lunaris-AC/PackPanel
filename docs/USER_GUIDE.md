@@ -6,12 +6,14 @@
 2. Choisissez un nom, une version Minecraft et Vanilla, Fabric, Forge, NeoForge
    ou Quilt. Le catalogue officiel détermine les versions compatibles et Java
    requis ; une erreur de catalogue est affichée séparément.
-3. Déposez vos mods et configurations dans l’explorateur. Attendez la fin du
-   traitement des fichiers avant de publier. Les uploads directs, TUS et ZIP
-   passent par le worker et le calcul d’intégrité.
-4. Cliquez sur **Publier**. Les fichiers préparés en brouillon deviennent alors
-   disponibles dans la version publique. Enregistrer un fichier sans publication
-   immédiate prépare un brouillon.
+3. Déposez vos mods et configurations dans **Fichiers & Mods**. Les ajouts,
+   modifications et suppressions sont visibles dans le brouillon de l’instance.
+   Utilisez **Importer un ZIP** pour un pack complet ou des fichiers volumineux.
+4. Cliquez sur **Publier la première version** ou **Publier les modifications**
+   pour distribuer les fichiers et les paramètres de jeu. L’onglet
+   **Publications & Rollback** distingue le brouillon de la version active.
+   Vous pouvez écrire des notes de version visibles sur la page joueur et
+   dans le launcher.
 
 L’adresse de connexion directe est facultative. Pour tester l’écran de démarrage
 sans serveur, laissez-la vide. Une instance Minecraft décrit un jeu et son pack ;
@@ -25,11 +27,20 @@ Le client est dédié à cette instance : il ne présente pas de liste d’insta
 aux joueurs. Le mode actuel utilise un pseudo offline ; Microsoft sera ajouté
 et validé ultérieurement.
 
-Choisissez Windows puis **Générer le launcher**. Utilisez **Télécharger** dans
-l’historique pour récupérer le ZIP autonome. Distribuez ce ZIP complet aux
-joueurs. Après une modification de l’apparence du launcher, générez un nouveau
-ZIP ; les mises à jour des mods et configurations passent par **Publier** et
-sont récupérées par les launchers déjà distribués.
+Publiez l’instance et enregistrez les réglages du launcher. Choisissez une
+plateforme puis cliquez sur **Générer le launcher**. La tâche continue en
+arrière-plan. Quand son statut indique **Prêt**, cliquez sur **Télécharger**
+dans l’historique et distribuez le ZIP complet aux joueurs.
+
+Pour donner aux joueurs un lien sans compte administrateur, cliquez sur
+**Partager** dans l’historique, puis sur **Copier le lien** dans la section
+**Page de téléchargement des joueurs**. Une nouvelle archive partagée remplace
+celle de la même plateforme. **Retirer le partage** désactive l’ancien lien de
+téléchargement.
+
+Générez un nouveau ZIP après un changement d’apparence. Les launchers déjà
+distribués récupèrent les modifications du pack à la prochaine ouverture du jeu,
+après publication.
 
 ## Jouer
 
@@ -43,9 +54,18 @@ cliquez sur **Jouer / Play**. Avant chaque lancement, le client vérifie le mani
 et met à jour les fichiers du pack. Les sauvegardes, captures d’écran et options
 personnelles sont protégées.
 
+Dans **Votre pack**, vous pouvez comparer la version installée à la dernière
+version publiée, préparer une mise à jour ou vérifier les fichiers sans
+démarrer le jeu. Si l’instance propose des fichiers facultatifs, cochez ceux
+que vous voulez installer avant de préparer ou de lancer le pack.
+
 Le sélecteur **FR / EN** dans la barre de titre change immédiatement la langue
 et mémorise le choix. Cette barre permet aussi de déplacer, réduire, agrandir,
 restaurer et fermer la fenêtre.
+
+En cas de problème, ouvrez **Journal du jeu** dans **Paramètres**. Le dernier
+diagnostic reste disponible après la fermeture du launcher. Le bouton **Copier
+le diagnostic** le place dans le presse-papiers.
 
 ## Paramètres du joueur
 

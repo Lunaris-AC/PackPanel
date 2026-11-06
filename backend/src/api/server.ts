@@ -17,6 +17,7 @@ import { instanceRoutes } from './routes/instances';
 import { launcherRoutes } from './routes/launchers';
 import { catalogRoutes } from './routes/catalog';
 import { systemRoutes } from './routes/system';
+import { playerRoutes } from './routes/player';
 
 import { authenticateRequest, enforceOriginCheck, isAllowedOrigin } from '../auth/middleware';
 
@@ -35,7 +36,7 @@ async function main() {
       if (!origin || isAllowedOrigin(origin)) {
         return cb(null, true);
       }
-      return cb(new Error('Origine non autorisée par la politique CORS'), false);
+      return cb(Object.assign(new Error('Origine non autorisée par la politique CORS'), { statusCode: 403 }), false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -99,18 +100,25 @@ async function main() {
   await server.register(statsRoutes, { prefix: '/api' });
   await server.register(userRoutes, { prefix: '/api' });
   await server.register(instanceRoutes, { prefix: '/api/v2' });
+  await server.register(playerRoutes, { prefix: '/api/v2' });
   await server.register(launcherRoutes, { prefix: '/api/v2' });
   await server.register(catalogRoutes, { prefix: '/api/v2' });
   await server.register(systemRoutes, { prefix: '/api/system' });
 
   // Custom global error handler
   server.setErrorHandler((error, request, reply) => {
-    const err = error as Error & { statusCode?: number };
+    const err = error as Error & { statusCode?: number; code?: string };
     if (err.name === 'InvalidPathError' || err.statusCode === 400) {
       return reply.status(400).send({ error: err.message });
     }
-    server.log.error(error);
+    if (err.code === '22P02' && err.message.includes('type uuid')) {
+      return reply.status(400).send({ error: 'Identifiant invalide' });
+    }
+    if (err.code === '23505') {
+      return reply.status(409).send({ error: 'Cette valeur est déjà utilisée.' });
+    }
     const statusCode = err.statusCode || 500;
+    if (statusCode >= 500) request.log.error({ err }, 'Request failed');
     return reply.status(statusCode).send({
       error: statusCode >= 500 ? 'Erreur interne du serveur' : err.message
     });

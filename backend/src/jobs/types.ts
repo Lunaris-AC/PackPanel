@@ -1,4 +1,5 @@
 export type JobType =
+  | 'build_launcher'
   | 'process_upload_file'
   | 'seal_and_build_release'
   | 'extract_zip_import'

@@ -3,14 +3,17 @@ import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, requireRole, requireInstancePermission, recordAuditLog } from '../../auth/middleware';
+import { authenticateRequest, canManageLauncherInstances, requireRole, requireInstancePermission, recordAuditLog } from '../../auth/middleware';
 import { config, ENDPOINTS_DIR, STAGING_DIR, getFilesBaseUrl } from '../../config';
 import { validateCombination, resolveJavaRequirement, LoaderType } from '../../catalog';
-import { handleSealAndBuildRelease, handlePublishRelease } from '../../jobs/handlers/publish';
-import { buildLauncherArtifact } from '../../build/launcher-builder';
+import { getWorkingRelease, handleSealAndBuildRelease, handlePublishRelease } from '../../jobs/handlers/publish';
+import { buildLauncherArtifact, reserveLauncherBuild } from '../../build/launcher-builder';
 import { storeBufferInCas, getCasObjectPath } from '../../storage/cas';
 import { hashBuffer } from '../../storage/hasher';
+import { sanitizeRelativePath } from '../../storage/paths';
+import { launcherArchivePath, sendLauncherArchive } from './player';
 
 const InstanceCreateSchema = z.object({
   name: z.string().min(1).max(128),
@@ -26,7 +29,8 @@ const InstanceCreateSchema = z.object({
   serverName: z.string().max(128).optional(),
   filePolicies: z.object({
     protected_paths: z.array(z.string()).default(['saves/', 'screenshots/', 'options.txt', 'optionsof.txt', 'usercache.json']),
-    optional_mods: z.array(z.string()).default([])
+    optional_mods: z.array(z.string().min(1).max(512).refine(value => sanitizeRelativePath(value).valid)
+      .transform(value => sanitizeRelativePath(value).normalizedPath!)).max(1000).default([])
   }).optional(),
   endpointId: z.string().uuid().optional()
 });
@@ -42,15 +46,29 @@ const LauncherSettingsSchema = z.object({
   title: z.string().min(1).max(128).optional(),
   template: z.enum(['minimal', 'community', 'network']).optional(),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-  backgroundUrl: z.string().optional(),
-  logoUrl: z.string().optional(),
-  iconUrl: z.string().optional(),
+  backgroundUrl: z.string().nullish(),
+  logoUrl: z.string().nullish(),
+  iconUrl: z.string().nullish(),
   authMicrosoft: z.boolean().optional(),
   authOffline: z.boolean().optional(),
-  discordUrl: z.string().optional(),
-  websiteUrl: z.string().optional(),
+  discordUrl: z.string().nullish(),
+  websiteUrl: z.string().nullish(),
   additionalInstanceIds: z.array(z.string().uuid()).optional()
 });
+
+function getGameConfig(instance: any) {
+  const { minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies } = instance;
+  return { minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies };
+}
+
+function imageMime(buffer: Buffer) {
+  if (buffer.subarray(0, 8).toString('hex') === '89504e470d0a1a0a') return 'image/png';
+  if (buffer.subarray(0, 3).toString('hex') === 'ffd8ff') return 'image/jpeg';
+  if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  if (/^GIF8[79]a$/.test(buffer.toString('ascii', 0, 6))) return 'image/gif';
+  if (/^(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(buffer.toString('utf8', 0, 512).trimStart())) return 'image/svg+xml';
+  return null;
+}
 
 export async function instanceRoutes(fastify: FastifyInstance) {
   // Public media download route
@@ -65,18 +83,10 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: 'Image introuvable' });
     }
 
+    if (fs.statSync(casPath).size > 10 * 1024 * 1024) return reply.status(404).send({ error: 'Image introuvable' });
     const buf = fs.readFileSync(casPath);
-    // Detect image type from magic numbers
-    let mime = 'application/octet-stream';
-    if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
-      mime = 'image/png';
-    } else if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
-      mime = 'image/jpeg';
-    } else if (buf.length >= 12 && buf.toString('utf8', 0, 4) === 'RIFF' && buf.toString('utf8', 8, 12) === 'WEBP') {
-      mime = 'image/webp';
-    } else if (buf.toString('utf8', 0, 4).includes('<svg')) {
-      mime = 'image/svg+xml';
-    }
+    const mime = imageMime(buf);
+    if (!mime) return reply.status(404).send({ error: 'Image introuvable' });
 
     return reply
       .header('Content-Type', mime)
@@ -167,24 +177,20 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       }
 
       // Check if current draft game config differs from active release game config
-      let hasDraftConfigChanges = false;
-      if (activeRelease && activeRelease.game_config) {
-        const gc = typeof activeRelease.game_config === 'string'
-          ? JSON.parse(activeRelease.game_config)
-          : activeRelease.game_config;
-
-        if (
-          gc.minecraft_version !== inst.minecraft_version ||
-          gc.loader_type !== inst.loader_type ||
-          (gc.loader_version || null) !== (inst.loader_version || null) ||
-          gc.java_version !== inst.java_version ||
-          (gc.server_address || null) !== (inst.server_address || null)
-        ) {
-          hasDraftConfigChanges = true;
-        }
-      } else if (!activeRelease) {
-        hasDraftConfigChanges = true;
-      }
+      const publishedConfig = typeof activeRelease?.game_config === 'string'
+        ? JSON.parse(activeRelease.game_config)
+        : activeRelease?.game_config;
+      const hasDraftConfigChanges = !publishedConfig || !isDeepStrictEqual(getGameConfig(publishedConfig), getGameConfig(inst));
+      const workingRelease = inst.endpoint_id ? await getWorkingRelease(inst.endpoint_id) : null;
+      const role = req.user!.role;
+      const rights = role === 'operator' && inst.endpoint_id ? (await query(
+        'SELECT can_write, can_publish FROM user_endpoint_permissions WHERE user_id = $1 AND endpoint_id = $2',
+        [req.user!.userId, inst.endpoint_id]
+      )).rows[0] : null;
+      const permissions = {
+        can_write: role === 'admin' || Boolean(rights?.can_write),
+        can_publish: role === 'admin' || Boolean(rights?.can_publish)
+      };
 
       // Fetch launcher details if attached
       let launcher: any = null;
@@ -193,8 +199,8 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         if (lpRes.rows.length > 0) {
           launcher = lpRes.rows[0];
           const buildsRes = await query(
-            'SELECT * FROM launcher_builds WHERE launcher_project_id = $1 ORDER BY created_at DESC LIMIT 5',
-            [launcher.id]
+            'SELECT * FROM launcher_builds WHERE launcher_project_id = $1 AND (instance_id = $2 OR instance_id IS NULL) ORDER BY created_at DESC LIMIT 5',
+            [launcher.id, inst.id]
           );
           launcher.builds = buildsRes.rows;
         }
@@ -207,6 +213,9 @@ export async function instanceRoutes(fastify: FastifyInstance) {
           activeRelease,
           pendingChangesCount,
           hasDraftConfigChanges,
+          draft_release_id: workingRelease?.status === 'draft' ? workingRelease.release_id : null,
+          player_page_url: `${getFilesBaseUrl()}/play/${encodeURIComponent(inst.slug)}`,
+          permissions,
           launcher
         }
       });
@@ -245,6 +254,9 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       const existing = await query('SELECT id FROM instances WHERE slug = $1', [data.slug]);
       if (existing.rows.length > 0) {
         return reply.status(409).send({ error: `Une instance avec le slug "${data.slug}" existe déjà.` });
+      }
+      if (data.endpointId && !(await query('SELECT id FROM endpoints WHERE id = $1', [data.endpointId])).rowCount) {
+        return reply.status(404).send({ error: 'Endpoint introuvable' });
       }
 
       // Auto-create or associate endpoint
@@ -321,6 +333,9 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 
       const current = existing.rows[0];
       const targetId = current.id;
+      if (data.endpointId && !(await query('SELECT id FROM endpoints WHERE id = $1', [data.endpointId])).rowCount) {
+        return reply.status(404).send({ error: 'Endpoint introuvable' });
+      }
       if (data.endpointId && req.user!.role !== 'admin') {
         const rights = await query('SELECT can_write FROM user_endpoint_permissions WHERE user_id = $1 AND endpoint_id = $2', [req.user!.userId, data.endpointId]);
         if (!rights.rows[0]?.can_write) return reply.status(403).send({ error: 'Association à cet endpoint non autorisée' });
@@ -407,6 +422,9 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       preHandler: [requireRole(['admin', 'operator'])]
     }, async (req, reply) => {
       const { id } = req.params as { id: string };
+      const parsed = z.object({ notes: z.string().trim().max(2000).optional() }).safeParse(req.body ?? {});
+      if (!parsed.success) return reply.status(400).send({ error: 'Les notes de version sont limitées à 2 000 caractères.' });
+      const releaseNotes = parsed.data.notes || undefined;
       const instRes = await query('SELECT * FROM instances WHERE id::text = $1 OR slug = $1', [id]);
       if (instRes.rows.length === 0) {
         return reply.status(404).send({ error: 'Instance introuvable' });
@@ -436,17 +454,14 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         for (const session of sessRes.rows) {
           latestReleaseId = (await handleSealAndBuildRelease({ sessionId: session.id, immediatePublish: false })).createdReleaseId;
         }
-        await handlePublishRelease({ releaseId: latestReleaseId, endpointId: inst.endpoint_id });
+        await handlePublishRelease({ releaseId: latestReleaseId, endpointId: inst.endpoint_id, releaseNotes });
         await recordAuditLog(req.user!.userId, 'publish', 'instance', inst.id, { slug: inst.slug }, req.ip);
         return reply.send({ success: true, message: 'Instance publiée avec succès.' });
       } else {
-        const drafts = await query(`SELECT id FROM releases WHERE endpoint_id = $1 AND status = 'draft'
-          AND version_num > COALESCE((SELECT MAX(version_num) FROM releases WHERE endpoint_id = $1 AND is_active = TRUE), 0)
-          ORDER BY version_num DESC LIMIT 1`, [inst.endpoint_id]);
-        if (drafts.rows.length > 0) {
-          const { minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies } = inst;
-          await query('UPDATE releases SET game_config = $1 WHERE id = $2', [JSON.stringify({ minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies }), drafts.rows[0].id]);
-          await handlePublishRelease({ releaseId: drafts.rows[0].id, endpointId: inst.endpoint_id });
+        const draft = await getWorkingRelease(inst.endpoint_id);
+        if (draft?.status === 'draft') {
+          await query('UPDATE releases SET game_config = $1 WHERE id = $2', [JSON.stringify(getGameConfig(inst)), draft.id]);
+          await handlePublishRelease({ releaseId: draft.id, endpointId: inst.endpoint_id, releaseNotes });
           await recordAuditLog(req.user!.userId, 'publish', 'instance', inst.id, { slug: inst.slug }, req.ip);
           return reply.send({ success: true, message: 'Instance publiée avec succès.' });
         }
@@ -462,8 +477,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         fs.mkdirSync(staging, { recursive: true, mode: 0o750 });
       }
 
-      await handleSealAndBuildRelease({ sessionId, immediatePublish: true });
-      await writeV2ManifestToEndpoint(inst.id);
+      await handleSealAndBuildRelease({ sessionId, immediatePublish: true, releaseNotes });
 
       await recordAuditLog(req.user!.userId, 'publish', 'instance', inst.id, { slug: inst.slug }, req.ip);
 
@@ -478,40 +492,34 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       preHandler: [requireRole(['admin', 'operator'])]
     }, async (req, reply) => {
       const { id } = req.params as { id: string };
-      const instRes = await query('SELECT * FROM instances WHERE id::text = $1 OR slug = $1', [id]);
-      if (instRes.rows.length === 0) {
-        return reply.status(404).send({ error: 'Instance introuvable' });
-      }
-      const inst = instRes.rows[0];
+      const launcher = await withTransaction(async client => {
+        const instRes = await client.query('SELECT * FROM instances WHERE id::text = $1 OR slug = $1 FOR UPDATE', [id]);
+        const inst = instRes.rows[0];
+        if (!inst) return null;
 
-      let projectId = inst.launcher_project_id;
-      if (!projectId) {
-        // Create new launcher project inheriting instance branding
-        const lpRes = await query(
-          `INSERT INTO launcher_projects (
-            name, slug, title, template, accent_color, created_by_user_id, distribution_fqdn
-          ) VALUES ($1, $2, $3, 'community', '#6366f1', $4, $5)
-          RETURNING id`,
-          [inst.name, `${inst.slug}-launcher`, `${inst.name} Launcher`, req.user!.userId, config.FILES_FQDN]
-        );
-        projectId = lpRes.rows[0].id;
-
-        // Associate primary instance
-        await query(
+        let projectId = inst.launcher_project_id;
+        if (!projectId) {
+          const insert = `INSERT INTO launcher_projects (name, slug, title, template, accent_color, created_by_user_id, distribution_fqdn)
+            VALUES ($1, $2, $3, 'community', '#6366f1', $4, $5) ON CONFLICT (slug) DO NOTHING RETURNING id`;
+          const values = [inst.name, `${inst.slug.slice(0, 55)}-launcher`, `${inst.name.slice(0, 119)} Launcher`, req.user!.userId, config.FILES_FQDN];
+          const preferred = await client.query(insert, values);
+          projectId = preferred.rows[0]?.id;
+          while (!projectId) {
+            values[1] = `launcher-${crypto.randomUUID()}`;
+            projectId = (await client.query(insert, values)).rows[0]?.id;
+          }
+        }
+        await client.query(
           `INSERT INTO launcher_project_instances (launcher_project_id, instance_id, is_default, sort_order)
-           VALUES ($1, $2, TRUE, 0)
-           ON CONFLICT DO NOTHING`,
-          [projectId, inst.id]
+           VALUES ($1, $2, TRUE, 0) ON CONFLICT DO NOTHING`, [projectId, inst.id]
         );
-      }
-
-      await query(
-        `UPDATE instances SET launcher_enabled = TRUE, launcher_project_id = $1 WHERE id = $2`,
-        [projectId, inst.id]
-      );
-
-      const lp = (await query('SELECT * FROM launcher_projects WHERE id = $1', [projectId])).rows[0];
-      return reply.send({ success: true, launcher: lp });
+        await client.query(
+          'UPDATE instances SET launcher_enabled = TRUE, launcher_project_id = $1 WHERE id = $2', [projectId, inst.id]
+        );
+        return (await client.query('SELECT * FROM launcher_projects WHERE id = $1', [projectId])).rows[0];
+      });
+      if (!launcher) return reply.status(404).send({ error: 'Instance introuvable' });
+      return reply.send({ success: true, launcher });
     });
 
     // 8. Disable Launcher for Instance
@@ -519,7 +527,8 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       preHandler: [requireRole(['admin', 'operator'])]
     }, async (req, reply) => {
       const { id } = req.params as { id: string };
-      await query('UPDATE instances SET launcher_enabled = FALSE WHERE id::text = $1 OR slug = $1', [id]);
+      const updated = await query('UPDATE instances SET launcher_enabled = FALSE WHERE id::text = $1 OR slug = $1', [id]);
+      if (!updated.rowCount) return reply.status(404).send({ error: 'Instance introuvable' });
       return reply.send({ success: true, message: 'Launcher désactivé pour cette instance' });
     });
 
@@ -543,19 +552,29 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       }
 
       const data = parsed.data;
+      const urlValue = (value: string | null | undefined) => value === undefined ? null : value ?? '';
+      if (data.additionalInstanceIds?.length) {
+        const ids = [...new Set(data.additionalInstanceIds)];
+        const linked = await query('SELECT id FROM instances WHERE id = ANY($1::uuid[])', [ids]);
+        if (linked.rowCount !== ids.length) return reply.status(400).send({ error: 'Instance associée introuvable' });
+      }
       const updated = await withTransaction(async (client) => {
+        await client.query('SELECT id FROM launcher_projects WHERE id = $1 FOR UPDATE', [inst.launcher_project_id]);
+        if (!await canManageLauncherInstances(req.user!, inst.launcher_project_id, data.additionalInstanceIds, client.query.bind(client) as typeof query)) {
+          return null;
+        }
         const res = await client.query(
           `UPDATE launcher_projects
            SET title = COALESCE($1, title),
                template = COALESCE($2, template),
                accent_color = COALESCE($3, accent_color),
-               background_url = COALESCE($4, background_url),
-               logo_url = COALESCE($5, logo_url),
-               icon_url = COALESCE($6, icon_url),
+               background_url = NULLIF(COALESCE($4, background_url), ''),
+               logo_url = NULLIF(COALESCE($5, logo_url), ''),
+               icon_url = NULLIF(COALESCE($6, icon_url), ''),
                auth_microsoft = COALESCE($7, auth_microsoft),
                auth_offline = COALESCE($8, auth_offline),
-               discord_url = COALESCE($9, discord_url),
-               website_url = COALESCE($10, website_url),
+               discord_url = NULLIF(COALESCE($9, discord_url), ''),
+               website_url = NULLIF(COALESCE($10, website_url), ''),
                updated_at = NOW()
            WHERE id = $11
            RETURNING *`,
@@ -563,13 +582,13 @@ export async function instanceRoutes(fastify: FastifyInstance) {
             data.title ?? null,
             data.template ?? null,
             data.accentColor ?? null,
-            data.backgroundUrl ?? null,
-            data.logoUrl ?? null,
-            data.iconUrl ?? null,
+            urlValue(data.backgroundUrl),
+            urlValue(data.logoUrl),
+            urlValue(data.iconUrl),
             data.authMicrosoft ?? null,
             data.authOffline ?? null,
-            data.discordUrl ?? null,
-            data.websiteUrl ?? null,
+            urlValue(data.discordUrl),
+            urlValue(data.websiteUrl),
             inst.launcher_project_id
           ]
         );
@@ -599,6 +618,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         return res.rows[0];
       });
 
+      if (!updated) return reply.status(403).send({ error: 'Droits insuffisants sur les instances du launcher' });
       return reply.send({ launcher: updated });
     });
 
@@ -606,7 +626,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
     authed.post('/instances/:id/launcher/media', {
       preHandler: [requireRole(['admin', 'operator'])]
     }, async (req, reply) => {
-      const data = await req.file();
+      const data = await req.file({ limits: { fileSize: 10 * 1024 * 1024 } });
       if (!data) {
         return reply.status(400).send({ error: 'Aucun fichier reçu' });
       }
@@ -615,11 +635,16 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       if (buf.length > 10 * 1024 * 1024) {
         return reply.status(400).send({ error: 'Image trop volumineuse (max 10 Mo)' });
       }
+      if (!imageMime(buf)) return reply.status(400).send({ error: 'Format d’image non pris en charge.' });
 
       const { sha1, sha256 } = hashBuffer(buf);
       await storeBufferInCas(buf, sha256, sha1);
 
-      const mediaUrl = `https://${config.ADMIN_FQDN}/api/v2/media/${sha256}`;
+      const origin = req.headers.origin;
+      const panelOrigin = origin && URL.canParse(origin) && new URL(origin).host === req.host
+        ? new URL(origin).origin
+        : req.host === config.ADMIN_FQDN ? `${req.protocol}://${req.host}` : `https://${config.ADMIN_FQDN}`;
+      const mediaUrl = `${panelOrigin}/api/v2/media/${sha256}`;
       return reply.send({ url: mediaUrl, sha256 });
     });
 
@@ -628,34 +653,35 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       preHandler: [requireRole(['admin', 'operator'])]
     }, async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { targetOs = 'windows' } = (req.body || {}) as { targetOs?: 'windows' | 'linux' | 'macos' | 'all' };
-      if (!['windows', 'linux', 'macos', 'all'].includes(targetOs)) return reply.status(400).send({ error: 'Plateforme invalide' });
+      const parsed = z.object({ targetOs: z.enum(['windows', 'linux', 'macos', 'all']).default('windows'), background: z.boolean().default(false) }).safeParse(req.body ?? {});
+      if (!parsed.success) return reply.status(400).send({ error: 'Plateforme ou mode de génération invalide' });
+      const { targetOs, background } = parsed.data;
 
-      const instRes = await query('SELECT id, launcher_project_id, slug FROM instances WHERE id::text = $1 OR slug = $1', [id]);
-      if (instRes.rows.length === 0 || !instRes.rows[0].launcher_project_id) {
+      const instRes = await query('SELECT id, endpoint_id, launcher_enabled, launcher_project_id FROM instances WHERE id::text = $1 OR slug = $1', [id]);
+      const inst = instRes.rows[0];
+      if (!inst?.launcher_enabled || !inst.launcher_project_id) {
         return reply.status(400).send({ error: "Aucun launcher n'est configuré pour cette instance" });
       }
 
-      const launcherProjectId = instRes.rows[0].launcher_project_id;
-      const buildResult = await buildLauncherArtifact({
-        launcherProjectId,
-        instanceId: instRes.rows[0].id,
+      const build = await reserveLauncherBuild({
+        launcherProjectId: inst.launcher_project_id,
+        instanceId: inst.id,
         targetOs,
         userId: req.user!.userId
-      });
+      }, background);
+      if (!build) return reply.status(404).send({ error: 'Projet de launcher introuvable' });
+      if (build.existing) return reply.status(409).send({ error: 'Une génération est déjà en cours pour cette plateforme.' });
+      await recordAuditLog(req.user!.userId, 'build_launcher', 'instance', inst.id, { targetOs, version: build.version }, req.ip);
+      if (background) return reply.status(202).send({ success: true, build });
 
-      await recordAuditLog(req.user!.userId, 'build_launcher', 'instance', id, { targetOs, version: buildResult.version }, req.ip);
-
-      return reply.status(201).send({
-        success: true,
-        build: buildResult
-      });
+      const result = await buildLauncherArtifact(build.id, inst.id);
+      return reply.status(201).send({ success: true, build: result });
     });
 
     // 12. List Launcher Builds
     authed.get('/instances/:id/launcher/builds', async (req, reply) => {
       const { id } = req.params as { id: string };
-      const instRes = await query('SELECT launcher_project_id FROM instances WHERE id::text = $1 OR slug = $1', [id]);
+      const instRes = await query('SELECT id, launcher_project_id FROM instances WHERE id::text = $1 OR slug = $1', [id]);
       if (instRes.rows.length === 0 || !instRes.rows[0].launcher_project_id) {
         return reply.send({ builds: [] });
       }
@@ -664,35 +690,61 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         `SELECT b.*, u.username as created_by_username
          FROM launcher_builds b
          LEFT JOIN users u ON u.id = b.created_by_user_id
-         WHERE b.launcher_project_id = $1
-         ORDER BY b.created_at DESC LIMIT 20`,
-        [instRes.rows[0].launcher_project_id]
+         WHERE b.launcher_project_id = $1 AND (b.instance_id = $2 OR b.instance_id IS NULL)
+         ORDER BY (b.shared_at IS NOT NULL) DESC, b.created_at DESC LIMIT 20`,
+        [instRes.rows[0].launcher_project_id, instRes.rows[0].id]
       );
 
       return reply.send({ builds: res.rows });
     });
 
-    // 13. Download Built Artifact
-    authed.get('/instances/:id/launcher/builds/:buildId/download', async (req, reply) => {
+    authed.put('/instances/:id/launcher/builds/:buildId/share', {
+      preHandler: [requireRole(['admin', 'operator']), requireInstancePermission('can_publish')]
+    }, async (req, reply) => {
       const { id, buildId } = req.params as { id: string; buildId: string };
-      const buildRes = await query(`SELECT b.* FROM launcher_builds b JOIN instances i ON i.launcher_project_id = b.launcher_project_id WHERE b.id = $1 AND (i.id::text = $2 OR i.slug = $2)`, [buildId, id]);
-      if (buildRes.rows.length === 0) {
-        return reply.status(404).send({ error: 'Build introuvable' });
+      const parsed = z.object({ shared: z.boolean() }).safeParse(req.body);
+      if (!parsed.success) return reply.status(400).send({ error: 'État du partage invalide.' });
+      const { shared } = parsed.data;
+      const result = await withTransaction(async client => {
+        const instances = await client.query(
+          `SELECT i.id, i.launcher_enabled, i.launcher_project_id,
+           EXISTS (SELECT 1 FROM releases r WHERE r.endpoint_id = i.endpoint_id AND r.is_active) AS published
+           FROM instances i WHERE i.id::text = $1 OR i.slug = $1 FOR UPDATE`, [id]);
+        const instance = instances.rows[0];
+        if (!instance) return 'missing';
+        const builds = await client.query(
+          `SELECT id, target_os, artifact_path FROM launcher_builds
+           WHERE id::text = $1 AND instance_id = $2 AND launcher_project_id = $3 AND status = 'completed'`,
+          [buildId, instance.id, instance.launcher_project_id]);
+        const build = builds.rows[0];
+        if (!build) return 'missing';
+        if (shared) {
+          if (!instance.published || !instance.launcher_enabled || !await launcherArchivePath(build.artifact_path)) return 'unavailable';
+          await client.query('UPDATE launcher_builds SET shared_at = NULL WHERE instance_id = $1 AND target_os = $2 AND shared_at IS NOT NULL AND id <> $3',
+            [instance.id, build.target_os, build.id]);
+        }
+        await client.query('UPDATE launcher_builds SET shared_at = CASE WHEN $2 THEN COALESCE(shared_at, NOW()) ELSE NULL END WHERE id = $1',
+          [build.id, shared]);
+        return 'updated';
+      });
+      if (result === 'missing') return reply.status(404).send({ error: 'Build introuvable' });
+      if (result === 'unavailable') return reply.status(409).send({ error: 'Publiez l’instance et générez une archive disponible avant de la partager.' });
+      await recordAuditLog(req.user!.userId, shared ? 'share_launcher' : 'unshare_launcher', 'launcher_build', buildId, {}, req.ip);
+      return reply.send({ success: true });
+    });
+
+    // 13. Download Built Artifact
+    authed.route<{ Params: { id: string; buildId: string } }>({
+      method: ['GET', 'HEAD'],
+      url: '/instances/:id/launcher/builds/:buildId/download',
+      async handler(req, reply) {
+        const { id, buildId } = req.params;
+        const buildRes = await query(`SELECT b.artifact_path, b.artifact_sha256 FROM launcher_builds b
+           JOIN instances i ON i.launcher_project_id = b.launcher_project_id AND (b.instance_id IS NULL OR b.instance_id = i.id)
+           WHERE b.id::text = $1 AND b.status = 'completed' AND (i.id::text = $2 OR i.slug = $2)`, [buildId, id]);
+        if (buildRes.rows.length === 0) return reply.status(404).send({ error: 'Build introuvable' });
+        return sendLauncherArchive(req, reply, buildRes.rows[0]);
       }
-
-      const build = buildRes.rows[0];
-      if (!build.artifact_path || !fs.existsSync(build.artifact_path)) {
-        return reply.status(404).send({ error: 'Fichier artefact indisponible sur le serveur' });
-      }
-
-      const filename = path.basename(build.artifact_path);
-      const stream = fs.createReadStream(build.artifact_path);
-
-      return reply
-        .header('Content-Disposition', `attachment; filename="${filename}"`)
-        .header('Content-Type', 'application/zip')
-        .header('Content-Length', build.artifact_size)
-        .send(stream);
     });
 
     // 14. Get V2 manifest for instance
@@ -724,7 +776,7 @@ export async function buildInstanceManifestV2(instanceId: string, dbQuery: typeo
   if (!inst.endpoint_id) return null;
 
   const relRes = await dbQuery(`
-    SELECT r.id, r.release_id, r.version_num, r.published_at, r.game_config
+    SELECT r.id, r.release_id, r.version_num, r.published_at, r.game_config, r.release_notes
     FROM releases r
     WHERE r.endpoint_id = $1 AND r.is_active = TRUE
     LIMIT 1
@@ -799,6 +851,8 @@ export async function buildInstanceManifestV2(instanceId: string, dbQuery: typeo
     ],
     cleanupRules: ['mods'],
     files,
+    releaseId: rel.release_id,
+    releaseNotes: rel.release_notes ?? undefined,
     updatedAt: rel.published_at || new Date().toISOString()
   };
 

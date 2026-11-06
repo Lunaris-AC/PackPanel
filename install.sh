@@ -18,6 +18,7 @@ ADMIN_ORIGIN_PORT=$ADMIN_ORIGIN_PORT
 FILES_ORIGIN_PORT=$FILES_ORIGIN_PORT
 ADMIN_FQDN=$ADMIN_FQDN
 FILES_FQDN=$FILES_FQDN
+FILES_BASE_URL=${FILES_BASE_URL:-}
 APP_DIR=$(pwd)
 DATA_DIR=$DATA_DIR
 ADMIN_LOGIN=$ADMIN_LOGIN
@@ -32,6 +33,7 @@ bash scripts/deploy.sh
 if [ -n "${INITIAL_PASSWORD:-}" ]; then
   sed -i 's/^ADMIN_DEFAULT_PASSWORD=.*/ADMIN_DEFAULT_PASSWORD=/' .env
   docker compose up -d --no-build api
+  docker compose restart nginx >/dev/null
   ADMIN_READY_PORT=$(docker compose port nginx 8080 | head -n 1)
   ADMIN_READY_PORT=${ADMIN_READY_PORT##*:}
   for attempt in $(seq 1 30); do

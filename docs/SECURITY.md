@@ -7,17 +7,17 @@ et un jeton aléatoire dont seule l’empreinte est conservée en base. Les entr
 malformées sont rejetées. Les changements de mot de passe révoquent les autres
 sessions du compte.
 
-L’API accepte un cookie HttpOnly/SameSite ainsi qu’un jeton Bearer. Le panel
-conserve aussi ce jeton dans localStorage : le cookie ne constitue donc pas,
-à lui seul, une protection contre un script exécuté dans le panel. Utilisez
-HTTPS pour l’administration exposée sur Internet ; les cookies Secure de
-production ne sont pas disponibles lors des tests LAN en HTTP.
+Sur HTTPS, le navigateur utilise un cookie HttpOnly, Secure et SameSite. Les
+clients API peuvent demander un jeton Bearer. Le panneau HTTP en LAN garde ce
+jeton dans le navigateur pour les environnements de test. L’administration
+exposée sur Internet doit utiliser HTTPS.
 
 Les requêtes mutantes avec une origine ou un referer non autorisé sont refusées.
 Les clients API authentifiés peuvent envoyer des requêtes sans ces en-têtes.
 La configuration des domaines est persistée par une route réservée à
 l’administrateur. La distribution publique sur le port 8081 expose des fichiers
-statiques et bloque les routes d’administration/API.
+statiques, la page joueur et ses seules routes de téléchargement. Les routes
+d’administration restent sur le listener du panneau.
 
 ## Rôles
 

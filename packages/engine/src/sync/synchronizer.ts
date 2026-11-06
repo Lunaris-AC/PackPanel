@@ -9,6 +9,23 @@ export interface SyncProgressCallback {
   (current: number, total: number, currentFile: string): void;
 }
 
+type OptionalChoices = Record<string, boolean>;
+const isOptional = (file: InstanceFileEntryV2) => ['optional', 'default_on', 'default_off'].includes(file.policy);
+function protectedPathMatcher(manifest: InstanceManifestV2) {
+  const normalize = (value: string) => value.replace(/\\+/g, '/').toLowerCase();
+  const protectedPaths = [
+    'saves/', 'screenshots/', 'options.txt', 'optionsof.txt', 'usercache.json', 'servers.dat',
+    ...(manifest.protectedPaths || []),
+    ...manifest.files.filter(file => file.policy === 'protected' || file.policy === 'user_managed').map(file => file.path)
+  ].map(normalize);
+  return (value: string) => {
+    const normalized = normalize(value);
+    return protectedPaths.some(entry => entry.endsWith('/')
+      ? normalized.startsWith(entry) || normalized === entry.slice(0, -1)
+      : normalized === entry);
+  };
+}
+
 export class InstanceSynchronizer {
   private instanceDir: string;
 
@@ -16,11 +33,20 @@ export class InstanceSynchronizer {
     this.instanceDir = instanceDir;
   }
 
+  listOptionalFiles(manifest: InstanceManifestV2, choices: OptionalChoices = {}) {
+    const isProtected = protectedPathMatcher(manifest);
+    return manifest.files.filter(file => isOptional(file) && !isProtected(file.path)).map(file => ({
+      path: file.path,
+      enabled: Object.hasOwn(choices, file.path) ? choices[file.path] :
+        file.policy === 'default_on' || fs.existsSync(resolveSafePath(this.instanceDir, file.path))
+    }));
+  }
+
   /**
    * Fetches manifest from either V2 packpanel.json or legacy MineLaunched index.php
    */
-  static async fetchManifest(manifestUrl: string): Promise<InstanceManifestV2> {
-    const rawData = await fetchJson<any>(manifestUrl);
+  static async fetchManifest(manifestUrl: string, signal?: AbortSignal): Promise<InstanceManifestV2> {
+    const rawData = await fetchJson<any>(manifestUrl, signal);
 
     // If it's already a V2 manifest
     if (rawData && rawData.formatVersion === 2) {
@@ -70,53 +96,45 @@ export class InstanceSynchronizer {
   async sync(
     manifest: InstanceManifestV2,
     onProgress?: SyncProgressCallback,
-    concurrency: number = 4
+    concurrency: number = 4,
+    options: { signal?: AbortSignal; optionalFiles?: OptionalChoices } = {}
   ): Promise<void> {
+    const { signal, optionalFiles = {} } = options;
+    signal?.throwIfAborted();
     if (!fs.existsSync(this.instanceDir)) {
       fs.mkdirSync(this.instanceDir, { recursive: true });
     }
 
-    const protectedPaths = [
-      'saves/',
-      'screenshots/',
-      'options.txt',
-      'optionsof.txt',
-      'usercache.json',
-      'servers.dat',
-      ...(manifest.protectedPaths || []),
-      ...manifest.files.filter(f => f.policy === 'protected' || f.policy === 'user_managed').map(f => f.path)
-    ];
     for (const file of manifest.files) resolveSafePath(this.instanceDir, file.path);
     for (const rule of manifest.cleanupRules || []) resolveSafePath(this.instanceDir, rule);
-
-    const isProtected = (relPath: string): boolean => {
-      const normalized = relPath.replace(/\\+/g, '/').toLowerCase();
-      for (const prot of protectedPaths) {
-        const normProt = prot.replace(/\\+/g, '/').toLowerCase();
-        if (normProt.endsWith('/') && (normalized.startsWith(normProt) || normalized === normProt.slice(0, -1))) {
-          return true;
-        }
-        if (normalized === normProt) {
-          return true;
-        }
-      }
-      return false;
-    };
+    const isProtected = protectedPathMatcher(manifest);
 
     // 1. Determine which files need downloading
     const filesToDownload: InstanceFileEntryV2[] = [];
+    const optionalToRemove: string[] = [];
     const validManifestPaths = new Set<string>();
+    const comparisonPath = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
 
     for (const file of manifest.files) {
+      signal?.throwIfAborted();
       const normalizedPath = file.path.replace(/\\+/g, '/');
-      validManifestPaths.add(normalizedPath);
+      validManifestPaths.add(comparisonPath(normalizedPath));
 
       if (isProtected(normalizedPath)) {
         continue; // Never overwrite player-protected files
       }
 
       const localPath = resolveSafePath(this.instanceDir, normalizedPath);
-      if ((file.policy === 'optional' || file.policy === 'default_off') && !fs.existsSync(localPath)) continue;
+      if (isOptional(file)) {
+        if (Object.hasOwn(optionalFiles, file.path)) {
+          if (!optionalFiles[file.path]) {
+            optionalToRemove.push(normalizedPath);
+            continue;
+          }
+        } else if (file.policy !== 'default_on' && !fs.existsSync(localPath)) {
+          continue;
+        }
+      }
       if (!fs.existsSync(localPath)) {
         filesToDownload.push(file);
       } else {
@@ -136,41 +154,46 @@ export class InstanceSynchronizer {
     let completedCount = 0;
 
     const queue = [...filesToDownload];
-    const workers = Array.from({ length: Math.min(concurrency, totalFiles || 1) }, async () => {
-      while (queue.length > 0) {
-        const item = queue.shift();
-        if (!item) break;
-
-        const destPath = resolveSafePath(this.instanceDir, item.path);
-        await downloadFile(item.url, destPath, {
-          expectedSha1: item.sha1,
-          expectedSha256: item.sha256,
-          expectedSize: item.size > 0 ? item.size : undefined
-        });
-
-        completedCount++;
-        if (onProgress) {
-          onProgress(completedCount, totalFiles, item.path);
+    const controller = new AbortController();
+    const downloadSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const workerCount = Math.min(Math.max(1, Math.trunc(concurrency) || 1), totalFiles);
+    const workers = Array.from({ length: workerCount }, async () => {
+      try {
+        while (queue.length && !downloadSignal.aborted) {
+          const item = queue.shift()!;
+          const destPath = resolveSafePath(this.instanceDir, item.path);
+          await downloadFile(item.url, destPath, {
+            expectedSha1: item.sha1,
+            expectedSha256: item.sha256,
+            expectedSize: item.size > 0 ? item.size : undefined,
+            signal: downloadSignal
+          });
+          onProgress?.(++completedCount, totalFiles, item.path);
         }
+      } catch (error) {
+        controller.abort(error);
       }
     });
 
     await Promise.all(workers);
+    downloadSignal.throwIfAborted();
+    for (const relativePath of optionalToRemove) {
+      await fs.promises.rm(resolveSafePath(this.instanceDir, relativePath), { force: true });
+    }
 
     // 3. Cleanup useless files according to cleanupRules
     for (const rule of manifest.cleanupRules || []) {
       if (isProtected(rule)) continue;
       const ruleDir = resolveSafePath(this.instanceDir, rule);
       if (fs.existsSync(ruleDir) && fs.statSync(ruleDir).isDirectory()) {
-        this.cleanDirectory(ruleDir, rule, validManifestPaths, isProtected);
+        this.cleanDirectory(ruleDir, candidate => validManifestPaths.has(comparisonPath(candidate)), isProtected);
       }
     }
   }
 
   private cleanDirectory(
     dirPath: string,
-    prefix: string,
-    validPaths: Set<string>,
+    isInManifest: (p: string) => boolean,
     isProtected: (p: string) => boolean
   ) {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -185,13 +208,13 @@ export class InstanceSynchronizer {
       resolveSafePath(this.instanceDir, relPath);
 
       if (entry.isDirectory()) {
-        this.cleanDirectory(fullPath, prefix, validPaths, isProtected);
+        this.cleanDirectory(fullPath, isInManifest, isProtected);
         // If directory is now empty, remove it
         if (fs.readdirSync(fullPath).length === 0) {
           try { fs.rmdirSync(fullPath); } catch (e) {}
         }
       } else {
-        if (!validPaths.has(relPath)) {
+        if (!isInManifest(relPath)) {
           try {
             fs.unlinkSync(fullPath);
           } catch (e) {

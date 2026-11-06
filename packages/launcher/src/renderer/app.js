@@ -10,13 +10,22 @@ const translations = {
     megabytes: 'Mo', gigabytes: 'Go', memoryHint: '4096 Mo = 4 Go. Votre ordinateur dispose de {total} Go de mémoire.', argumentsTitle: 'Arguments JVM supplémentaires',
     argumentsDescription: 'Ils s’ajoutent aux réglages de l’instance. La mémoire se règle ci-dessus.', save: 'Enregistrer', saved: 'Paramètres enregistrés.',
     filesTitle: 'Les fichiers de votre jeu', filesDescription: 'Mods, captures d’écran et sauvegardes : tout est ici.', logs: 'Journal du jeu', offline: 'MODE OFFLINE',
-    ready: 'Prêt à jouer.', preparing: 'Préparation…', runningButton: 'Jeu en cours', stopping: 'Arrêt en cours…', stopped: 'Minecraft est arrêté.',
+    packTitle: 'Votre pack', checkPack: 'Rechercher une mise à jour', installPack: 'Préparer le pack', updatePack: 'Mettre à jour',
+    repairPack: 'Vérifier et réparer', prepared: 'Le pack est prêt à jouer.', releaseNotes: 'Notes de version',
+    packChecking: 'Recherche de la dernière version…', packOffline: 'Impossible de vérifier la dernière version.',
+    packNew: 'Prêt à installer.', packCurrent: 'Version à jour.', packUpdate: 'Une mise à jour est disponible.',
+    installedRelease: 'Installé {version}', availableRelease: 'Disponible {version}', copyAddress: 'Copier l’adresse du serveur',
+    addressCopied: 'Adresse du serveur copiée.', openDiagnostics: 'Ouvrir le journal', copyLog: 'Copier le diagnostic',
+    logPrivacy: 'Relisez le journal avant de le transmettre. Il peut contenir des messages de jeu.',
+    logCopied: 'Diagnostic copié.', logEmpty: 'Aucun diagnostic disponible.',
+    optionalTitle: 'Fichiers facultatifs', optionalHint: 'Vos choix s’appliqueront lors de la prochaine préparation ou du prochain lancement.',
+    ready: 'Prêt à jouer.', preparing: 'Préparation…', runningButton: 'Jeu en cours', stopping: 'Arrêt en cours…', cancelling: 'Annulation après l’étape en cours…', cancel: 'Annuler le lancement', stopped: 'Minecraft est arrêté.',
     resolving_version: 'Vérification de Minecraft et du modloader…', syncing_files: 'Mise à jour des fichiers du jeu…', checking_java: 'Vérification de Java…',
     downloading_java: 'Téléchargement de Java…', downloading_assets: 'Préparation des fichiers Minecraft…', launching: 'Démarrage de Minecraft…', running: 'Minecraft est en cours d’exécution.',
     downloadingFile: 'Téléchargement : {file}', assets: 'Textures et sons {count}', libraries: 'Bibliothèques {count}',
     crash: 'Le jeu s’est arrêté avec une erreur ({code}). Consultez le journal dans les paramètres.', nicknameError: 'Choisissez un pseudo de 3 à 16 caractères : lettres, chiffres et tiret bas.',
     memoryError: 'Choisissez une allocation mémoire valide, entre 1024 Mo et la mémoire disponible.', argumentError: 'Vérifiez les guillemets de vos arguments JVM.',
-    genericError: 'Une erreur est survenue. Consultez le journal dans les paramètres.', missingInstance: 'Aucune instance configurée.', device: 'Ouvrez {url} et saisissez le code {code}.'
+    genericError: 'Une erreur est survenue. Consultez le journal dans les paramètres.', manifestError: 'Impossible de charger la version publiée. Vérifiez votre connexion ou contactez la personne qui gère le pack.', missingInstance: 'Aucune instance configurée.', device: 'Ouvrez {url} et saisissez le code {code}.'
   },
   en: {
     minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', close: 'Close', yourSpace: 'YOUR SPACE', play: 'Play', settings: 'Settings', website: 'Community',
@@ -27,19 +36,29 @@ const translations = {
     megabytes: 'MB', gigabytes: 'GB', memoryHint: '4096 MB = 4 GB. Your computer has {total} GB of memory.', argumentsTitle: 'Additional JVM arguments',
     argumentsDescription: 'These are added to the instance settings. Adjust memory above.', save: 'Save settings', saved: 'Settings saved.',
     filesTitle: 'Your game files', filesDescription: 'Mods, screenshots and saves: everything is here.', logs: 'Game log', offline: 'OFFLINE MODE',
-    ready: 'Ready to play.', preparing: 'Preparing…', runningButton: 'Game running', stopping: 'Stopping…', stopped: 'Minecraft has stopped.',
+    packTitle: 'Your pack', checkPack: 'Check for updates', installPack: 'Prepare pack', updatePack: 'Update pack',
+    repairPack: 'Check and repair', prepared: 'The pack is ready to play.', releaseNotes: 'Release notes',
+    packChecking: 'Checking the latest release…', packOffline: 'Could not check the latest release.',
+    packNew: 'Ready to install.', packCurrent: 'Up to date.', packUpdate: 'An update is available.',
+    installedRelease: 'Installed {version}', availableRelease: 'Available {version}', copyAddress: 'Copy server address',
+    addressCopied: 'Server address copied.', openDiagnostics: 'Open game log', copyLog: 'Copy diagnostics',
+    logPrivacy: 'Review the log before sharing it. It can contain in-game messages.',
+    logCopied: 'Diagnostics copied.', logEmpty: 'No diagnostics yet.',
+    optionalTitle: 'Optional files', optionalHint: 'Your choices will take effect the next time you prepare or launch the pack.',
+    ready: 'Ready to play.', preparing: 'Preparing…', runningButton: 'Game running', stopping: 'Stopping…', cancelling: 'Cancelling after the current step…', cancel: 'Cancel launch', stopped: 'Minecraft has stopped.',
     resolving_version: 'Checking Minecraft and the mod loader…', syncing_files: 'Updating game files…', checking_java: 'Checking Java…',
     downloading_java: 'Downloading Java…', downloading_assets: 'Preparing Minecraft files…', launching: 'Starting Minecraft…', running: 'Minecraft is running.',
     downloadingFile: 'Downloading: {file}', assets: 'Textures and sounds {count}', libraries: 'Libraries {count}',
     crash: 'The game stopped with an error ({code}). Check the game log in Settings.', nicknameError: 'Choose a nickname with 3–16 characters: letters, numbers and underscores.',
     memoryError: 'Choose a valid memory allocation, between 1024 MB and your available memory.', argumentError: 'Check the quotation marks in your JVM arguments.',
-    genericError: 'Something went wrong. Check the game log in Settings.', missingInstance: 'No instance configured.', device: 'Open {url} and enter the code {code}.'
+    genericError: 'Something went wrong. Check the game log in Settings.', manifestError: 'Could not load the published release. Check your connection or contact the pack administrator.', missingInstance: 'No instance configured.', device: 'Open {url} and enter the code {code}.'
   }
 };
 let language = localStorage.getItem('packpanel_language') || (navigator.language.startsWith('fr') ? 'fr' : 'en');
 if (!translations[language]) language = 'en';
 const t = (key, variables = {}) => (translations[language][key] || key).replace(/\{(\w+)\}/g, (_, name) => variables[name] ?? '');
 let busy = false;
+let stopping = false;
 let config;
 let settings;
 let microsoftProfile = false;
@@ -49,22 +68,85 @@ let statusKey = 'ready';
 let statusVariables = {};
 let statusError = false;
 let saved = false;
+let packStatus = { installed: null, latest: null };
+let checkingPack = false;
+let logCopyStatus = '';
+let optionalFiles = [];
 const log = line => { el('logs').textContent = (el('logs').textContent + line + '\n').slice(-60000); el('logs').scrollTop = el('logs').scrollHeight; };
 function status(key, variables = {}, error = false) {
   statusKey = key; statusVariables = variables; statusError = error;
   el('status').textContent = t(key, variables); el('status').className = error ? 'error' : '';
+  el('troubleshoot').hidden = !error;
 }
 function renderProgress(event) {
   el('progress').value = event.progress; el('progress-value').textContent = Math.round(event.progress) + '%';
   const count = event.message?.match(/\(\d+\/\d+\)/)?.[0];
   if (event.step === 'syncing_files' && event.message?.startsWith('Téléchargement : ')) status('downloadingFile', { file: event.message.slice('Téléchargement : '.length) });
   else if (event.step === 'downloading_assets' && count) status(event.message.startsWith('Textures') ? 'assets' : 'libraries', { count });
-  else status(event.step === 'idle' ? 'stopping' : event.step in translations.en ? event.step : 'preparing');
+  else status(event.step === 'idle' ? 'cancelling' : event.step in translations.en ? event.step : 'preparing');
 }
 function updateButtons() {
-  el('play').disabled = !config || busy || (!config.auth.offline && !microsoftProfile);
+  el('play').disabled = !config || !settings || busy || (!config.auth.offline && !microsoftProfile);
   el('username').disabled = busy; el('stop').hidden = !busy; document.body.dataset.busy = String(busy);
+  el('stop').disabled = stopping;
+  el('stop').lastElementChild.textContent = t(progressEvent?.step === 'running' ? 'stop' : 'cancel');
   el('play-label').textContent = t(busy ? (progressEvent?.step === 'running' ? 'runningButton' : 'preparing') : 'play');
+  renderPack();
+}
+const releaseKey = pack => pack?.releaseId || pack?.updatedAt;
+function renderPack() {
+  const { installed, latest } = packStatus;
+  const display = latest || installed;
+  const updateAvailable = installed && latest && releaseKey(installed) !== releaseKey(latest);
+  el('pack-state').textContent = t(checkingPack ? 'packChecking' : !latest ? 'packOffline' :
+    !installed ? 'packNew' : updateAvailable ? 'packUpdate' : 'packCurrent');
+  el('pack-version').textContent = [
+    display && `Minecraft ${display.minecraftVersion} · ${display.loader}`,
+    installed?.releaseId && t('installedRelease', { version: installed.releaseId }),
+    latest?.releaseId && (!installed || updateAvailable) && t('availableRelease', { version: latest.releaseId })
+  ].filter(Boolean).join(' · ');
+  el('prepare-pack').textContent = t(!installed ? 'installPack' : updateAvailable ? 'updatePack' : 'repairPack');
+  el('prepare-pack').disabled = !config || busy || checkingPack;
+  el('check-pack').disabled = !config || busy || checkingPack;
+  el('release-details').hidden = !display?.notes;
+  el('pack-notes').textContent = display?.notes ?? '';
+  el('pack-server').hidden = !display?.serverAddress;
+  el('pack-address').textContent = display?.serverAddress ?? '';
+  el('optional-files').disabled = busy;
+}
+function renderOptionalFiles() {
+  el('optional-details').hidden = !optionalFiles.length;
+  el('optional-files').replaceChildren(...optionalFiles.map(file => {
+    const label = document.createElement('label');
+    const choice = document.createElement('input');
+    choice.type = 'checkbox';
+    choice.checked = file.enabled;
+    choice.onchange = () => action(async () => {
+      const enabled = choice.checked;
+      choice.disabled = true;
+      try { await api.setOptionalFile({ path: file.path, enabled }); file.enabled = enabled; }
+      catch (error) { choice.checked = file.enabled; throw error; }
+      finally { choice.disabled = false; }
+    });
+    label.append(choice, document.createTextNode(file.path));
+    return label;
+  }));
+}
+async function refreshPack() {
+  if (checkingPack) return;
+  checkingPack = true;
+  renderPack();
+  try {
+    const result = await api.getPackStatus();
+    packStatus = result;
+    optionalFiles = result.optionalFiles;
+    renderOptionalFiles();
+  } catch {
+    packStatus.latest = null;
+  } finally {
+    checkingPack = false;
+    renderPack();
+  }
 }
 function updateMemory() {
   const memory = Number(el('ram').value);
@@ -82,6 +164,7 @@ function setLanguage(value) {
   el('language-fr').setAttribute('aria-pressed', String(value === 'fr')); el('language-en').setAttribute('aria-pressed', String(value === 'en'));
   el('window-maximize').title = t(maximized ? 'restore' : 'maximize'); el('window-maximize').setAttribute('aria-label', el('window-maximize').title);
   if (saved) el('settings-status').textContent = t('saved');
+  el('log-copy-status').textContent = logCopyStatus ? t(logCopyStatus) : '';
   if (progressEvent && busy) renderProgress(progressEvent); else status(statusKey, statusVariables, statusError);
   updateMemory(); updateButtons();
 }
@@ -98,7 +181,8 @@ async function action(fn) {
   try { await fn(); } catch (error) {
     log(error.message);
     const message = error.message || '';
-    const key = /pseudo|username|nom d.utilisateur/i.test(message) ? 'nicknameError' : /guillemet/i.test(message) ? 'argumentError' : /mémoire|ramMb/i.test(message) ? 'memoryError' : 'genericError';
+    const key = message.includes('PACKPANEL_MANIFEST_UNAVAILABLE') ? 'manifestError'
+      : /pseudo|username|nom d.utilisateur/i.test(message) ? 'nicknameError' : /guillemet/i.test(message) ? 'argumentError' : /mémoire|ramMb/i.test(message) ? 'memoryError' : 'genericError';
     status(key, {}, true);
   }
 }
@@ -112,6 +196,46 @@ el('ram').oninput = updateMemory;
 el('ram-range').oninput = () => { el('ram').value = el('ram-range').value; updateMemory(); };
 el('settings-form').onsubmit = event => { event.preventDefault(); action(async () => { await api.saveSettings(values()); saved = true; el('settings-status').textContent = t('saved'); }); };
 el('open-folder').onclick = () => action(() => api.openGameDirectory());
+el('troubleshoot').onclick = () => {
+  tab(true);
+  el('logs-card').open = true;
+  el('logs-card').scrollIntoView({ block: 'nearest' });
+};
+el('copy-log').onclick = () => action(async () => {
+  logCopyStatus = await api.copyDiagnostics() ? 'logCopied' : 'logEmpty';
+  el('log-copy-status').textContent = t(logCopyStatus);
+});
+el('check-pack').onclick = refreshPack;
+el('copy-server').onclick = () => action(async () => {
+  const address = (packStatus.latest || packStatus.installed)?.serverAddress;
+  if (address) {
+    await api.copyServerAddress(address);
+    status('addressCopied');
+  }
+});
+function beginWork() {
+  busy = true;
+  progressEvent = undefined;
+  logCopyStatus = '';
+  el('logs').textContent = '';
+  el('log-copy-status').textContent = '';
+  el('progress').value = 0;
+  el('progress-value').textContent = '0%';
+  el('progress-area').hidden = false;
+  status('preparing');
+  updateButtons();
+}
+function endWork() {
+  busy = false;
+  stopping = false;
+  el('progress-area').hidden = true;
+  updateButtons();
+}
+el('prepare-pack').onclick = () => action(async () => {
+  beginWork();
+  try { await api.prepareInstance(); }
+  finally { endWork(); }
+});
 el('username').value = localStorage.getItem('packpanel_username') || '';
 el('username').onkeydown = event => { if (event.key === 'Enter' && !el('play').disabled) el('play').click(); };
 el('microsoft').onclick = () => action(async () => {
@@ -122,20 +246,27 @@ el('microsoft').onclick = () => action(async () => {
 el('play').onclick = () => action(async () => {
   if (config.auth.offline && !/^[a-zA-Z0-9_]{3,16}$/.test(el('username').value.trim())) { status('nicknameError', {}, true); return; }
   if (!Number.isInteger(values().ramMb) || values().ramMb < 1024 || values().ramMb > settings.maximumMemoryMb) { tab(true); status('memoryError', {}, true); return; }
-  busy = true; progressEvent = undefined; updateButtons(); status('preparing'); el('progress-area').hidden = false;
+  beginWork();
   try {
     if (config.auth.offline) { const name = el('username').value.trim(); await api.loginOffline(name); localStorage.setItem('packpanel_username', name); }
     await api.saveSettings(values()); await api.launchInstance({});
-  } catch (error) { busy = false; updateButtons(); el('progress-area').hidden = true; throw error; }
+  } catch (error) { endWork(); throw error; }
 });
-el('stop').onclick = () => action(async () => { await api.stopInstance(); status('stopping'); });
+el('stop').onclick = () => action(async () => {
+  stopping = true;
+  updateButtons();
+  status(progressEvent?.step === 'running' ? 'stopping' : 'cancelling');
+  try { await api.stopInstance(); }
+  catch (error) { stopping = false; updateButtons(); throw error; }
+});
 api.onProgress(event => {
   progressEvent = event; renderProgress(event);
-  if (event.step === 'stopped') { busy = false; el('progress-area').hidden = true; }
-  updateButtons();
+  if (event.step === 'stopped' || event.step === 'prepared') endWork();
+  else updateButtons();
 });
+api.onPackReady(pack => { packStatus = { installed: pack, latest: pack }; renderPack(); });
 api.onLog(log);
-api.onCrash(crash => { busy = false; updateButtons(); el('progress-area').hidden = true; status('crash', { code: crash.exitCode }, true); if (crash.crashReport) log(crash.crashReport); });
+api.onCrash(crash => { endWork(); status('crash', { code: crash.exitCode }, true); });
 setLanguage(language);
 action(async () => {
   config = await api.getConfig(); settings = await api.getSettings();
@@ -144,11 +275,16 @@ action(async () => {
   if (!instance) throw new Error(t('missingInstance'));
   el('instance-name').textContent = instance.name;
   if (/^#[0-9a-f]{6}$/i.test(config.branding.accentColor)) document.documentElement.style.setProperty('--accent', config.branding.accentColor);
-  if (config.branding.logoUrl && /^https?:/.test(config.branding.logoUrl)) { el('logo').src = config.branding.logoUrl; el('logo').hidden = false; el('default-logo').setAttribute('hidden', ''); }
+  if (config.branding.logoUrl && /^https?:/.test(config.branding.logoUrl)) {
+    el('logo').onload = () => { el('logo').hidden = false; el('default-logo').setAttribute('hidden', ''); };
+    el('logo').src = config.branding.logoUrl;
+  }
   if (config.branding.backgroundUrl && /^https?:/.test(config.branding.backgroundUrl)) { el('custom-background').style.backgroundImage = 'url(' + JSON.stringify(config.branding.backgroundUrl) + ')'; el('custom-background').hidden = false; }
   el('ram').value = settings.ramMb; el('ram').max = settings.maximumMemoryMb; el('ram-range').max = settings.maximumMemoryMb; el('jvm-args').value = settings.customJvmArgs;
   el('microsoft').hidden = !config.auth.microsoft; el('username-field').hidden = !config.auth.offline;
   if (!config.auth.offline) el('status-mode').hidden = true;
   for (const [id, url] of [['discord', config.branding.discordUrl], ['website', config.branding.websiteUrl]]) if (url && /^https?:\/\//.test(url)) { el(id).href = url; el(id).hidden = false; }
   updateMemory(); updateButtons();
+  void refreshPack();
+  el('logs').textContent = await api.getLastLog();
 });

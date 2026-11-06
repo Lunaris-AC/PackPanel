@@ -3,10 +3,21 @@ const s=JSON.parse(fs.readFileSync(require('path').join(process.env.PACKPANEL_CH
 async function req(route,method='GET',body,token=s.token,status=200){const r=await fetch(root+route,{method,headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined});const d=await r.json();assert.equal(r.status,status,route+' '+JSON.stringify(d));return d;}
 (async()=>{
 const users=[];try{
+const launcher=(await req('/v2/instances/'+s.instance.id)).instance.launcher;
 for(const role of ['viewer','operator']){const name='release-'+role+'-'+crypto.randomBytes(3).toString('hex');const password='Aa1!'+crypto.randomBytes(16).toString('hex');const u=(await req('/users','POST',{username:name,password,role},s.token,201)).user;users.push(u.id);const login=await req('/auth/login','POST',{username:name,password});const token=login.token || login.session?.token;const pair=typeof token==='string' && token.includes(':')?token:login.sessionId+':'+token;
 await req('/v2/instances/'+s.instance.id+'/publish','POST',undefined,pair,403);
 await req('/v2/instances/'+s.instance.id,'PUT',{description:'unauthorized'},pair,403);
-if(role==='operator'){await req('/users/'+u.id+'/permissions','PUT',{permissions:[{endpoint_id:s.instance.endpoint_id,can_write:true,can_publish:false}]});await req('/v2/instances/'+s.instance.id,'PUT',{description:'authorized write'},pair,200);await req('/v2/instances/'+s.instance.id+'/publish?check=true','POST',undefined,pair,403);await req('/endpoints/'+s.instance.endpoint_id+'/explorer/save-file','POST',{path:'config/blocked.txt',content:'blocked',commitNow:true},pair,403);}}
+if (launcher) await req('/v2/launchers/'+launcher.id,'PUT',{title:'Unauthorized'},pair,403);
+if(role==='operator'){
+  await req('/endpoints/'+s.instance.endpoint_id,'GET',undefined,pair);
+  await req('/endpoints/'+s.instance.endpoint_id,'GET',undefined,pair);
+  await req('/v2/instances/'+s.instance.id+'/publish','POST',undefined,pair,403);
+  await req('/users/'+u.id+'/permissions','PUT',{permissions:[{endpoint_id:s.instance.endpoint_id,can_write:true,can_publish:false}]});
+  await req('/v2/instances/'+s.instance.id,'PUT',{description:'authorized write'},pair);
+  if (launcher) await req('/v2/launchers/'+launcher.id,'PUT',{title:launcher.title},pair);
+  await req('/v2/instances/'+s.instance.id+'/publish?check=true','POST',undefined,pair,403);
+  await req('/endpoints/'+s.instance.endpoint_id+'/explorer/save-file','POST',{path:'config/blocked.txt',content:'blocked',commitNow:true},pair,403);
+}}
 await req('/v2/instances/'+s.instance.id,'PUT',{minecraftVersion:'not-a-real-version'},s.token,400);
 await req('/v2/instances/'+s.instance.id,'PUT',{javaVersion:8},s.token,400);
 await req('/v2/instances','GET',undefined,'invalid:token',401);

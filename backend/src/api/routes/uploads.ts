@@ -18,6 +18,16 @@ if (!fs.existsSync(tusUploadDir)) {
   fs.mkdirSync(tusUploadDir, { recursive: true, mode: 0o750 });
 }
 
+async function mayPublishUpload(userId: string | null, endpointId: string): Promise<boolean> {
+  if (!userId) return false;
+  const result = await query(
+    `SELECT u.role = 'admin' OR p.can_publish IS TRUE AS allowed FROM users u
+     LEFT JOIN user_endpoint_permissions p ON p.user_id = u.id AND p.endpoint_id = $2
+     WHERE u.id = $1`, [userId, endpointId]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
 export const tusServer = new TusServer({
   path: '/api/uploads/tus',
   relativeLocation: true,
@@ -70,7 +80,8 @@ export const tusServer = new TusServer({
           sessionId,
           endpointId,
           zipPath: destZipPath,
-          mode: session.mode
+          mode: session.mode,
+          immediatePublish: await mayPublishUpload(session.user_id, endpointId) ? undefined : false
         }, 5);
 
         await query(
@@ -406,6 +417,7 @@ export async function uploadRoutes(fastify: FastifyInstance) {
     preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_write')]
   }, async (req: FastifyRequest, reply: FastifyReply) => {
     const { id: endpointId } = req.params as { id: string };
+    const { draft } = req.query as { draft?: string };
 
     if (!req.isMultipart()) {
       return reply.status(400).send({ error: 'Requête multipart/form-data requise' });
@@ -436,7 +448,13 @@ export async function uploadRoutes(fastify: FastifyInstance) {
     const zipFilePath = path.join(sessionStaging, 'upload.zip');
     const writeStream = fs.createWriteStream(zipFilePath);
 
-    await pipeline(data.file, writeStream);
+    try {
+      await pipeline(data.file, writeStream);
+    } catch (error) {
+      await fs.promises.rm(zipFilePath, { force: true }).catch(() => {});
+      await query("UPDATE upload_sessions SET status = 'failed', error_message = 'Transfert ZIP interrompu' WHERE id = $1", [sessionId]);
+      throw error;
+    }
     if (data.file.truncated) {
       fs.unlinkSync(zipFilePath);
       await query(`UPDATE upload_sessions SET status = 'failed', error_message = 'Archive trop volumineuse' WHERE id = $1`, [sessionId]);
@@ -447,7 +465,8 @@ export async function uploadRoutes(fastify: FastifyInstance) {
       sessionId,
       endpointId,
       zipPath: zipFilePath,
-      mode
+      mode,
+      immediatePublish: draft !== 'true' && await mayPublishUpload(req.user!.userId, endpointId) ? undefined : false
     }, 5);
 
     await recordAuditLog(req.user!.userId, 'upload_zip', 'endpoint', endpointId, { sessionId, jobId: job.id, mode }, req.ip);

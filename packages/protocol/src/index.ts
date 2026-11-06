@@ -50,6 +50,8 @@ export interface InstanceManifestV2 {
   protectedPaths: string[];
   cleanupRules: string[];
   files: InstanceFileEntryV2[];
+  releaseId?: string;
+  releaseNotes?: string;
   updatedAt: string;
 }
 
@@ -83,6 +85,8 @@ export const InstanceManifestV2Schema = z.object({
   ]),
   cleanupRules: z.array(z.string()).default(['mods']),
   files: z.array(InstanceFileEntryV2Schema),
+  releaseId: z.string().max(64).optional(),
+  releaseNotes: z.string().max(2000).optional(),
   updatedAt: z.string()
 });
 
@@ -157,6 +161,7 @@ export type EngineStatusStep =
   | 'downloading_assets'
   | 'extracting_natives'
   | 'launching'
+  | 'prepared'
   | 'running'
   | 'crashed'
   | 'stopped';

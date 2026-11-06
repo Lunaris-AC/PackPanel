@@ -6,6 +6,7 @@ import { handleSealAndBuildRelease, handlePublishRelease } from './jobs/handlers
 import { handleExtractZipImport } from './jobs/handlers/zip';
 import { handleGarbageCollection } from './jobs/handlers/gc';
 import { handleScanIncomingFolder } from './jobs/handlers/watch';
+import { buildLauncherArtifact } from './build/launcher-builder';
 import { query } from './db';
 import { OBJECTS_DIR, UPLOADS_DIR, ENDPOINTS_DIR, BACKUPS_DIR, reloadPublicConfiguration } from './config';
 
@@ -22,9 +23,7 @@ for (const dir of [OBJECTS_DIR, UPLOADS_DIR, BACKUPS_DIR]) {
 fs.mkdirSync(ENDPOINTS_DIR, { recursive: true, mode: 0o755 });
 fs.chmodSync(ENDPOINTS_DIR, 0o755);
 
-async function startWorker() {
-  console.log(`[Worker] Started ${workerId}`);
-
+async function runQueue(launcherOnly = false) {
   // Schedule background periodic jobs
   let lastGc = Date.now();
   let lastWatchScan = Date.now();
@@ -32,13 +31,13 @@ async function startWorker() {
   while (isRunning) {
     try {
       // 1. Periodic GC every 6 hours
-      if (Date.now() - lastGc > 6 * 3600 * 1000) {
+      if (!launcherOnly && Date.now() - lastGc > 6 * 3600 * 1000) {
         lastGc = Date.now();
         await JobQueue.enqueue('gc_orphan_objects', {});
       }
 
       // 2. Periodic incoming folder check every 30 seconds
-      if (Date.now() - lastWatchScan > 30 * 1000) {
+      if (!launcherOnly && Date.now() - lastWatchScan > 30 * 1000) {
         reloadPublicConfiguration();
         lastWatchScan = Date.now();
         const activeEndpoints = await query(`SELECT id, slug FROM endpoints WHERE is_active = TRUE`);
@@ -48,7 +47,7 @@ async function startWorker() {
       }
 
       // 3. Fetch next job
-      const job = await JobQueue.fetchNext(workerId);
+      const job = await JobQueue.fetchNext(workerId, launcherOnly);
       if (!job) {
         // No pending jobs, sleep 1 second
         await new Promise(r => setTimeout(r, 1000));
@@ -68,6 +67,10 @@ async function startWorker() {
 
       try {
         switch (job.type) {
+          case 'build_launcher':
+            reloadPublicConfiguration();
+            await buildLauncherArtifact(job.payload.buildId, job.payload.instanceId);
+            break;
           case 'process_upload_file':
             await handleProcessUploadFile(job.payload);
             break;
@@ -104,7 +107,6 @@ async function startWorker() {
     }
   }
 
-  console.log(`[Worker] Stopped ${workerId}`);
 }
 
 process.on('SIGTERM', () => {
@@ -118,5 +120,6 @@ process.on('SIGINT', () => {
 });
 
 if (require.main === module) {
-  startWorker();
+  console.log(`[Worker] Started ${workerId}`);
+  Promise.all([runQueue(), runQueue(true)]).then(() => console.log(`[Worker] Stopped ${workerId}`));
 }

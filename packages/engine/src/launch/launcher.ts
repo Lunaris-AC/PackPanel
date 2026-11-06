@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
+import { createInterface } from 'node:readline';
 import { AuthProfile, InstanceManifestV2 } from '@packpanel/protocol';
 import { MojangVersionJson } from '../mojang/version.js';
 import { evaluateRules } from '../utils/platform.js';
@@ -142,11 +143,13 @@ export class MinecraftLauncher extends EventEmitter {
    * Launches Minecraft as a child process and attaches event listeners.
    */
   launch(options: LaunchOptions): ChildProcess {
+    if (this.process) throw new Error('Une instance Minecraft est déjà en cours d’exécution.');
     const { jvmArgs, gameArgs, mainClass } = this.buildArguments(options);
     const fullArgs = [...jvmArgs, mainClass, ...gameArgs];
 
     this.emit('launching', { command: options.javaPath, args: fullArgs });
 
+    const startedAt = Date.now();
     const proc = spawn(options.javaPath, fullArgs, {
       cwd: options.gameDir,
       stdio: ['pipe', 'pipe', 'pipe']
@@ -155,15 +158,9 @@ export class MinecraftLauncher extends EventEmitter {
     this.process = proc;
     this.stopping = false;
 
-    proc.stdout.on('data', (data) => {
-      const text = data.toString('utf8');
-      this.emit('log', text);
-    });
-
-    proc.stderr.on('data', (data) => {
-      const text = data.toString('utf8');
-      this.emit('log', text);
-    });
+    for (const input of [proc.stdout, proc.stderr]) {
+      createInterface({ input, crlfDelay: Infinity }).on('line', line => this.emit('log', line));
+    }
 
     proc.on('error', (err) => {
       this.emit('error', err);
@@ -171,23 +168,28 @@ export class MinecraftLauncher extends EventEmitter {
 
     proc.on('close', (code, signal) => {
       this.process = null;
-      if (code !== 0 && code !== null && !this.stopping) {
+      if (!this.stopping && (code !== 0 || signal)) {
         // Check for latest crash report
         const crashDir = path.join(options.gameDir, 'crash-reports');
         let latestCrashContent: string | null = null;
-        if (fs.existsSync(crashDir)) {
-          const files = fs.readdirSync(crashDir)
-            .filter(f => f.endsWith('.txt'))
-            .map(f => ({ name: f, time: fs.statSync(path.join(crashDir, f)).mtimeMs }))
+        try {
+          const files = fs.readdirSync(crashDir, { withFileTypes: true })
+            .filter(file => file.isFile() && file.name.endsWith('.txt'))
+            .map(file => ({ name: file.name, time: fs.statSync(path.join(crashDir, file.name)).mtimeMs }))
+            .filter(file => file.time >= startedAt)
             .sort((a, b) => b.time - a.time);
-
-          if (files.length > 0) {
-            latestCrashContent = fs.readFileSync(path.join(crashDir, files[0].name), 'utf8');
+          if (files.length) {
+            const fd = fs.openSync(path.join(crashDir, files[0].name), 'r');
+            try {
+              const buffer = Buffer.alloc(60_000);
+              const bytes = fs.readSync(fd, buffer, 0, buffer.length, 0);
+              latestCrashContent = buffer.toString('utf8', 0, bytes);
+            } finally { fs.closeSync(fd); }
           }
-        }
+        } catch { /* The process output remains available without a crash report. */ }
 
         this.emit('crash', {
-          exitCode: code,
+          exitCode: code ?? -1,
           signal,
           crashReport: latestCrashContent
         });
