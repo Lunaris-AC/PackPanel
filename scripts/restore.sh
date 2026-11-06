@@ -17,12 +17,24 @@ trap 'rm -rf -- "$TEMP_DIR"' EXIT
 tar -xzf "$BACKUP_FILE" -C "$TEMP_DIR"
 test -s "$TEMP_DIR/database.dump"
 test -d "$TEMP_DIR/storage"
+if [ -s "$TEMP_DIR/launcher-signing.pem" ]; then
+  if [ -s .packpanel-signing/launcher.pem ]; then
+    cmp -s "$TEMP_DIR/launcher-signing.pem" .packpanel-signing/launcher.pem || { echo 'The backup has a different launcher signing key.' >&2; exit 1; }
+  else
+    install -d -m 700 .packpanel-signing
+    install -m 600 "$TEMP_DIR/launcher-signing.pem" .packpanel-signing/launcher.pem
+  fi
+fi
 docker compose stop api worker
 docker compose exec -T postgres sh -c 'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB"; createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"'
 docker compose exec -T postgres sh -c 'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$TEMP_DIR/database.dump"
 cp -a "$TEMP_DIR/storage/." "$DATA_DIR/storage/"
 if [ -d "$TEMP_DIR/builds" ]; then mkdir -p "$DATA_DIR/builds"; cp -a "$TEMP_DIR/builds/." "$DATA_DIR/builds/"; fi
 if [ -f "$TEMP_DIR/public-config.json" ]; then cp "$TEMP_DIR/public-config.json" "$DATA_DIR/public-config.json"; fi
+if [ -d "$TEMP_DIR/launcher-updates" ] && [ ! -e "$DATA_DIR/launcher-updates/windows-x64.json" ]; then
+  mkdir -p "$DATA_DIR/launcher-updates"
+  cp -a "$TEMP_DIR/launcher-updates/." "$DATA_DIR/launcher-updates/"
+fi
 docker compose start api worker
 ADMIN_ADDRESS=$(docker compose port nginx 8080 | head -n 1)
 if [ -n "$ADMIN_ADDRESS" ]; then

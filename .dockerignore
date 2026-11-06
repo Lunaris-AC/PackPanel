@@ -14,3 +14,4 @@ backend/dist
 *.tar.gz
 tests
 docs
+.packpanel-signing/

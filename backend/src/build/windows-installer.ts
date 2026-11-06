@@ -33,12 +33,16 @@ export async function buildWindowsInstaller(
 
     // Keep branding text separate from NSIS preprocessor syntax.
     const title = pack.title.replace(/[\u0000-\u001f\u007f$"'\\]/g, ' ').trim() || 'PackPanel';
-    await fs.promises.copyFile(path.join(__dirname, '../../src/build/windows-installer.nsi'), path.join(work, 'installer.nsi'));
+    const source = path.join(__dirname, '../../src/build');
+    await fs.promises.copyFile(path.join(source, 'windows-installer.nsi'), path.join(work, 'installer.nsi'));
+    await fs.promises.copyFile(path.join(source, 'windows-starter.nsi'), path.join(work, 'starter.nsi'));
     try {
+      const options = { cwd: work, env: { ...process.env, LC_ALL: 'C.UTF-8' }, timeout: 300_000 };
+      await run('makensis', ['-V2', '-INPUTCHARSET', 'UTF8', `-DPACK_ID=${pack.id}`, 'starter.nsi'], options);
       await run('makensis', [
         '-V2', '-INPUTCHARSET', 'UTF8', `-DPACK_ID=${pack.id}`, `-DPACK_SLUG=${pack.slug}`,
         `-DPACK_TITLE=${title}`, `-DPACK_VERSION=${pack.version}`, 'installer.nsi'
-      ], { cwd: work, env: { ...process.env, LC_ALL: 'C.UTF-8' }, timeout: 300_000 });
+      ], options);
     } catch (error: any) {
       throw new Error(`Échec de l’installateur Windows : ${error.stderr?.trim() || error.message}`, { cause: error });
     }

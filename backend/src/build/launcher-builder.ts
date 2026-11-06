@@ -7,6 +7,7 @@ import { appendDesktopRuntime } from './desktop-package';
 import { hashFile } from '../storage/hasher';
 import { JobQueue } from '../jobs/queue';
 import { buildWindowsInstaller } from './windows-installer';
+import { runtimeForInstaller } from './runtime-release';
 
 function createZipArchive(options: any) {
   const archiverModule = require('archiver');
@@ -150,7 +151,7 @@ Lancement :
       await Promise.all([pipeline(archive, output), (async () => {
         for (const target of targets) {
           await query('UPDATE launcher_builds SET stage = $2 WHERE id = $1', [buildId, target]);
-          await appendDesktopRuntime(archive, target, launcherConfig, controller.signal);
+          await appendDesktopRuntime(archive, target, launcherConfig, controller.signal, installer ? await runtimeForInstaller() : undefined);
         }
         await query("UPDATE launcher_builds SET stage = 'archiving' WHERE id = $1", [buildId]);
         await archive.finalize();

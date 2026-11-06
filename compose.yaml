@@ -48,6 +48,8 @@ services:
     build:
       context: .
       target: worker
+      args:
+        PACKPANEL_BUILD_REVISION: ${PACKPANEL_BUILD_REVISION:-}
     container_name: packpanel-worker
     restart: unless-stopped
     environment:
@@ -61,6 +63,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
     volumes:
       - ${DATA_DIR:-/srv/packpanel}:/srv/packpanel
+      - ./.packpanel-signing:/run/packpanel-signing:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +81,7 @@ services:
       - "${FILES_ORIGIN_PORT:-8081}:8081" # Distribution publique MineLaunched uniquement
     volumes:
       - ${DATA_DIR:-/srv/packpanel}/storage/endpoints:/srv/packpanel/storage/endpoints:ro
+      - ${DATA_DIR:-/srv/packpanel}/launcher-updates:/srv/packpanel/launcher-updates:ro
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/admin.conf:/etc/nginx/conf.d/admin.conf:ro
       - ./docker/nginx/files.conf:/etc/nginx/conf.d/files.conf:ro

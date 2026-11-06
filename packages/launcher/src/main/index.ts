@@ -13,6 +13,7 @@ import {
   InstanceSynchronizer
 } from '@packpanel/engine';
 import { packSummarySchema, redactDiagnostics, summarizePack } from './player-state';
+import { downloadLauncherUpgrade, installLauncherUpgrade, installedWindowsRoot, type LauncherUpdateState } from './launcher-updater';
 
 let mainWindow: BrowserWindow | null = null;
 let currentProfile: AuthProfile | null = null;
@@ -28,6 +29,9 @@ if (!fs.existsSync(dataDir)) {
 
 const engine = new MinecraftEngine({ baseDir: dataDir });
 let launchInProgress = false;
+let upgrading = false;
+let preparedUpgrade: Awaited<ReturnType<typeof downloadLauncherUpgrade>>;
+let updateCheck: Promise<LauncherUpdateState> | undefined;
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 const settingsSchema = z.object({ ramMb: z.number().int().min(1024).max(65536), customJvmArgs: z.string().max(8192).default('') });
 const maximumMemoryMb = Math.min(65536, Math.max(1024, Math.floor(os.totalmem() / 1024 / 1024)));
@@ -79,7 +83,7 @@ function recordLog(line: string) {
   logTimer.unref();
 }
 function beginPreparation() {
-  if (launchInProgress) throw new Error('Une instance est déjà en cours de lancement ou d’exécution.');
+  if (launchInProgress || upgrading) throw new Error('Une instance est déjà en cours de lancement ou d’exécution.');
   launchInProgress = true;
   liveLog = '';
   recordLog(new Date().toISOString());
@@ -138,7 +142,23 @@ function createWindow() {
       preload: preloadPath
     }
   });
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
+  mainWindow.once('ready-to-show', () => {
+    const token = app.commandLine.getSwitchValue('packpanel-update-health');
+    if (token) {
+      try {
+        const root = installedWindowsRoot(configuredInstance().id, process.execPath);
+        if (!root || !/^[a-f0-9-]{36}$/i.test(token) || fs.readFileSync(path.join(root, 'upgrade.pending'), 'utf8') !== token) {
+          throw new Error('Invalid launcher upgrade handoff');
+        }
+        fs.writeFileSync(path.join(root, `upgrade-ready-${token}`), 'ready', { flag: 'wx' });
+      } catch (error) {
+        console.error(error);
+        app.exit(1);
+        return;
+      }
+    }
+    mainWindow?.show();
+  });
   const notifyWindowState = () => mainWindow?.webContents.send('launcher:windowState', { maximized: mainWindow.isMaximized() });
   mainWindow.on('maximize', notifyWindowState);
   mainWindow.on('unmaximize', notifyWindowState);
@@ -330,6 +350,37 @@ ipcMain.handle('launcher:launchInstance', async (_event: any, options: {
 
 ipcMain.handle('launcher:stopInstance', async () => {
   await engine.stopInstance();
+});
+
+ipcMain.handle('launcher:checkProgramUpdate', async (): Promise<LauncherUpdateState> => {
+  if (preparedUpgrade) return { state: 'ready' };
+  if (updateCheck) return updateCheck;
+  const root = installedWindowsRoot(configuredInstance().id, process.execPath);
+  if (!root || !fs.existsSync(path.join(root, 'app', 'resources', 'app', 'launcher-runtime.json'))) return { state: 'idle' };
+  updateCheck = downloadLauncherUpgrade(root, state => mainWindow?.webContents.send('launcher:programUpdate', state))
+    .then(update => {
+      preparedUpgrade = update;
+      return { state: update ? 'ready' : 'idle' } as const;
+    })
+    .catch(error => { recordLog(`Launcher update: ${error.message}`); return { state: 'failed' } as const; })
+    .finally(() => { updateCheck = undefined; });
+  return updateCheck;
+});
+
+ipcMain.handle('launcher:applyProgramUpdate', async () => {
+  if (launchInProgress || upgrading || !preparedUpgrade) throw new Error('Fermez Minecraft avant de mettre à jour le launcher.');
+  const instanceId = configuredInstance().id;
+  const root = installedWindowsRoot(instanceId, process.execPath);
+  if (!root) throw new Error('Installation Windows introuvable.');
+  upgrading = true;
+  try {
+    await installLauncherUpgrade(root, instanceId, customUserData ? app.getPath('userData') : '', preparedUpgrade);
+    app.quit();
+  } catch (error) {
+    upgrading = false;
+    recordLog(`Launcher update: ${String(error)}`);
+    throw error;
+  }
 });
 
 // App lifecycle

@@ -91,11 +91,14 @@ Section
   ClearErrors
   Rename "$INSTDIR\incoming" "$INSTDIR\app"
   IfErrors restore
+  SetOutPath "$INSTDIR"
+  File "PackPanelStart.exe"
+  IfErrors restoreInstalled
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   IfErrors restoreInstalled
   CreateDirectory "$SMPROGRAMS\PackPanel"
   SetOutPath "$INSTDIR\app"
-  CreateShortCut "${SHORTCUT}" "$INSTDIR\app\PackPanel.exe"
+  CreateShortCut "${SHORTCUT}" "$INSTDIR\PackPanelStart.exe" "" "$INSTDIR\app\PackPanel.exe"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "${PACK_TITLE}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${PACK_VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\app\PackPanel.exe"
@@ -104,6 +107,7 @@ Section
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
   RMDir /r "$INSTDIR\previous"
+  Delete "$INSTDIR\upgrade.pending"
   Goto done
 
   restoreInstalled:
@@ -147,6 +151,12 @@ Section "Uninstall"
   Delete "${SHORTCUT}"
   RMDir "$SMPROGRAMS\PackPanel"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
+  Delete "$INSTDIR\PackPanelStart.exe"
+  Delete "$INSTDIR\upgrade.pending"
+  Delete "$INSTDIR\upgrade.failed"
+  Delete "$INSTDIR\upgrade-helper.log"
+  RMDir /r "$INSTDIR\upgrade-cache"
+  RMDir /r "$INSTDIR\previous"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   Goto done

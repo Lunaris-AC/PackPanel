@@ -21,6 +21,10 @@ const translations = {
     optionalTitle: 'Fichiers facultatifs', optionalHint: 'Vos choix s’appliqueront lors de la prochaine préparation ou du prochain lancement.',
     ready: 'Prêt à jouer.', preparing: 'Préparation…', runningButton: 'Jeu en cours', stopping: 'Arrêt en cours…', cancelling: 'Annulation après l’étape en cours…', cancel: 'Annuler le lancement', stopped: 'Minecraft est arrêté.',
     stopUnavailable: 'Fermez Minecraft depuis sa fenêtre ou réessayez quand le jeu répond.',
+    programUpdateTitle: 'Mise à jour du launcher', programUpdateApply: 'Redémarrer et mettre à jour',
+    programUpdateDownload: 'Téléchargement · {percent} %', programUpdateReady: 'La mise à jour est prête.',
+    programUpdateBusy: 'Disponible dès la fermeture de Minecraft.', programUpdateFailed: 'Mise à jour indisponible. Le launcher actuel reste utilisable.',
+    programUpdateInstalling: 'Préparation du redémarrage…',
     resolving_version: 'Vérification de Minecraft et du modloader…', syncing_files: 'Mise à jour des fichiers du jeu…', checking_java: 'Vérification de Java…',
     downloading_java: 'Téléchargement de Java…', downloading_assets: 'Préparation des fichiers Minecraft…', launching: 'Démarrage de Minecraft…', running: 'Minecraft est en cours d’exécution.',
     downloadingFile: 'Téléchargement : {file}', assets: 'Textures et sons {count}', libraries: 'Bibliothèques {count}',
@@ -48,6 +52,10 @@ const translations = {
     optionalTitle: 'Optional files', optionalHint: 'Your choices will take effect the next time you prepare or launch the pack.',
     ready: 'Ready to play.', preparing: 'Preparing…', runningButton: 'Game running', stopping: 'Stopping…', cancelling: 'Cancelling after the current step…', cancel: 'Cancel launch', stopped: 'Minecraft has stopped.',
     stopUnavailable: 'Close Minecraft from its window or try again once the game is responding.',
+    programUpdateTitle: 'Launcher update', programUpdateApply: 'Restart and update',
+    programUpdateDownload: 'Downloading · {percent}%', programUpdateReady: 'The update is ready.',
+    programUpdateBusy: 'Available when Minecraft closes.', programUpdateFailed: 'Update unavailable. You can keep using this launcher.',
+    programUpdateInstalling: 'Preparing to restart…',
     resolving_version: 'Checking Minecraft and the mod loader…', syncing_files: 'Updating game files…', checking_java: 'Checking Java…',
     downloading_java: 'Downloading Java…', downloading_assets: 'Preparing Minecraft files…', launching: 'Starting Minecraft…', running: 'Minecraft is running.',
     downloadingFile: 'Downloading: {file}', assets: 'Textures and sounds {count}', libraries: 'Libraries {count}',
@@ -74,6 +82,8 @@ let packStatus = { installed: null, latest: null };
 let checkingPack = false;
 let logCopyStatus = '';
 let optionalFiles = [];
+let programUpdate = { state: 'idle' };
+let applyingProgramUpdate = false;
 const log = line => { el('logs').textContent = (el('logs').textContent + line + '\n').slice(-60000); el('logs').scrollTop = el('logs').scrollHeight; };
 function status(key, variables = {}, error = false) {
   statusKey = key; statusVariables = variables; statusError = error;
@@ -88,13 +98,32 @@ function renderProgress(event) {
   else status(event.step === 'idle' ? 'cancelling' : event.step in translations.en ? event.step : 'preparing');
 }
 function updateButtons() {
-  el('play').disabled = !config || !settings || busy || (!config.auth.offline && !microsoftProfile);
+  el('play').disabled = !config || !settings || busy || applyingProgramUpdate || (!config.auth.offline && !microsoftProfile);
   el('username').disabled = busy; el('stop').hidden = !busy; document.body.dataset.busy = String(busy);
   el('stop').disabled = stopping;
   el('stop').lastElementChild.textContent = t(progressEvent?.step === 'running' ? 'stop' : 'cancel');
   el('play-label').textContent = t(busy ? (progressEvent?.step === 'running' ? 'runningButton' : 'preparing') : 'play');
   renderPack();
+  renderProgramUpdate();
 }
+function renderProgramUpdate() {
+  const { state, percent } = programUpdate;
+  el('program-update').hidden = state === 'idle';
+  el('program-update-apply').hidden = state !== 'ready';
+  el('program-update-apply').disabled = busy || applyingProgramUpdate;
+  el('program-update-status').textContent = applyingProgramUpdate ? t('programUpdateInstalling') : state === 'downloading'
+    ? t('programUpdateDownload', { percent }) : state === 'failed' ? t('programUpdateFailed')
+      : state === 'ready' ? t(busy ? 'programUpdateBusy' : 'programUpdateReady') : '';
+}
+function setProgramUpdate(value) { programUpdate = value; renderProgramUpdate(); }
+api.onProgramUpdate(setProgramUpdate);
+el('program-update-apply').onclick = async () => {
+  applyingProgramUpdate = true;
+  updateButtons();
+  try { await api.applyProgramUpdate(); }
+  catch (error) { log(error.message); setProgramUpdate({ state: 'failed' }); }
+  finally { applyingProgramUpdate = false; updateButtons(); }
+};
 const releaseKey = pack => pack?.releaseId || pack?.updatedAt;
 function renderPack() {
   const { installed, latest } = packStatus;
@@ -289,5 +318,6 @@ action(async () => {
   for (const [id, url] of [['discord', config.branding.discordUrl], ['website', config.branding.websiteUrl]]) if (url && /^https?:\/\//.test(url)) { el(id).href = url; el(id).hidden = false; }
   updateMemory(); updateButtons();
   void refreshPack();
+  void api.checkProgramUpdate().then(setProgramUpdate).catch(() => setProgramUpdate({ state: 'failed' }));
   el('logs').textContent = await api.getLastLog();
 });

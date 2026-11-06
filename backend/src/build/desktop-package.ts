@@ -5,10 +5,11 @@ import { text } from 'node:stream/consumers';
 import { openPromise } from 'yauzl';
 import { downloadArtifact } from '@electron/get';
 import { config, DATA_DIR } from '../config';
+import type { LauncherRuntime } from '@packpanel/protocol/launcher-update';
 
 export const ELECTRON_VERSION = '44.5.1';
 
-export async function appendDesktopRuntime(archive: any, target: 'windows' | 'linux' | 'macos', launcherConfig: unknown, signal: AbortSignal): Promise<void> {
+export async function appendDesktopRuntime(archive: any, target: 'windows' | 'linux' | 'macos', launcherConfig: unknown, signal: AbortSignal, runtime?: LauncherRuntime): Promise<void> {
   const platform = target === 'windows' ? 'win32' : target === 'macos' ? 'darwin' : 'linux';
   const runtimeZip = await downloadArtifact({
     version: ELECTRON_VERSION, artifactName: 'electron', platform, arch: 'x64',
@@ -45,9 +46,10 @@ export async function appendDesktopRuntime(archive: any, target: 'windows' | 'li
     zip.close();
   }
   archive.append(JSON.stringify({ name: 'packpanel-desktop', version: '2.0.0', main: 'dist/main/index.js' }), { name: appRoot + 'package.json' });
-  archive.append(JSON.stringify(launcherConfig, null, 2), { name: appRoot + 'launcher-config.json' });
+  if (launcherConfig) archive.append(JSON.stringify(launcherConfig, null, 2), { name: appRoot + 'launcher-config.json' });
+  if (runtime) archive.append(JSON.stringify(runtime), { name: appRoot + 'launcher-runtime.json' });
   archive.directory(path.join(launcherDir, 'dist'), appRoot + 'dist');
-  for (const pkg of ['@packpanel/engine', '@packpanel/protocol', 'adm-zip', 'zod']) {
+  for (const pkg of ['@packpanel/engine', '@packpanel/protocol', 'adm-zip', 'zod', 'yauzl', 'pend']) {
     const packageDir = path.dirname(require.resolve(pkg + '/package.json'));
     if (pkg.startsWith('@packpanel/')) {
       archive.file(path.join(packageDir, 'package.json'), { name: appRoot + 'node_modules/' + pkg + '/package.json' });
@@ -56,7 +58,7 @@ export async function appendDesktopRuntime(archive: any, target: 'windows' | 'li
       archive.directory(packageDir, appRoot + 'node_modules/' + pkg, (entry: any) => entry.name.includes('/node_modules/') && entry.name.includes('/node_modules/' + pkg + '/node_modules/') ? false : entry);
     }
   }
-  if (target === 'windows') archive.append('@echo off\r\nstart "" "%~dp0electron.exe"\r\n', { name: prefix + 'run-launcher.bat' });
+  if (target === 'windows' && launcherConfig) archive.append('@echo off\r\nstart "" "%~dp0electron.exe"\r\n', { name: prefix + 'run-launcher.bat' });
   if (target === 'linux') archive.append('#!/usr/bin/env sh\nset -eu\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$DIR/electron" "$@"\n', { name: prefix + 'run-launcher.sh', mode: 0o755 });
   if (target === 'macos') archive.append('#!/usr/bin/env sh\nset -eu\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec open "$DIR/Electron.app"\n', { name: prefix + 'run-launcher.sh', mode: 0o755 });
 }

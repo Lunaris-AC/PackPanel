@@ -32,6 +32,8 @@ CMD ["node", "dist/api/server.js"]
 
 FROM runtime AS worker
 RUN apt-get update && apt-get install -y --no-install-recommends nsis && rm -rf /var/lib/apt/lists/*
+ARG PACKPANEL_BUILD_REVISION
+ENV PACKPANEL_BUILD_REVISION=$PACKPANEL_BUILD_REVISION
 CMD ["node", "dist/worker.js"]
 
 FROM nginx:stable-alpine AS nginx

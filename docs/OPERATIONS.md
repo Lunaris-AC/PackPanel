@@ -12,6 +12,8 @@ bash scripts/smoke-test.sh 127.0.0.1 8080 8081
 
 `bash scripts/deploy.sh` builds the monorepo while the previous deployment remains available, creates a backup, stops application writes, waits for PostgreSQL, applies schema migrations, starts the new images and checks HTTP endpoints. Keep the previous image IDs/tags and source revision for rollback. A passed health check is not a substitute for validating a downloaded desktop launcher.
 
+The deploy script prepares a shared Windows launcher runtime and activates its signed feed after the smoke tests pass. New Windows installers pin the feed URL and Ed25519 public key. Keep `.packpanel-signing/launcher.pem` across deployments and restores so installed launchers can verify future updates. Keep the distribution URL reachable for existing clients if it changes.
+
 The public endpoint subtree must be readable by unprivileged Nginx: directories 755 and published files 644. Objects/uploads remain private. `incoming` is excluded by Nginx; never apply recursive public permissions to all storage.
 
 ## Backups
@@ -20,7 +22,7 @@ The public endpoint subtree must be readable by unprivileged Nginx: directories 
 bash scripts/backup.sh
 ```
 
-Backups are created under `$DATA_DIR/backups`, with private permissions. API/worker writes are stopped during the snapshot and resumed afterward; static distribution stays available. Archives contain a custom-format PostgreSQL dump, storage (including published releases/manifests), launcher builds, persisted public configuration when present, the environment file and the source revision. Runtime download caches are reproducible and excluded.
+Backups are created under `$DATA_DIR/backups`, with private permissions. API/worker writes are stopped during the snapshot and resumed afterward; static distribution stays available. Archives contain a custom-format PostgreSQL dump, storage (including published releases/manifests), launcher builds, the signed Windows runtime feed and its signing key when present, persisted public configuration, the environment file and the source revision. Runtime download caches are reproducible and excluded.
 
 Treat archives as sensitive: they contain configuration credentials. The script does not automatically delete old backups. Arrange retention according to available disk space and keep a copy outside the server.
 

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { AuthProfile, EngineProgressEvent, LauncherConfigV2 } from '@packpanel/protocol';
 import type { PackStatus, PackSummary } from '../main/player-state';
+import type { LauncherUpdateState } from '../main/launcher-updater';
 
 export interface PackPanelApi {
   getWindowState: () => Promise<{ maximized: boolean }>;
@@ -25,6 +26,9 @@ export interface PackPanelApi {
     customJavaPath?: string;
   }) => Promise<void>;
   stopInstance: () => Promise<void>;
+  checkProgramUpdate: () => Promise<LauncherUpdateState>;
+  applyProgramUpdate: () => Promise<void>;
+  onProgramUpdate: (callback: (value: LauncherUpdateState) => void) => () => void;
   onProgress: (callback: (event: EngineProgressEvent) => void) => () => void;
   onPackReady: (callback: (pack: PackSummary) => void) => () => void;
   onLog: (callback: (logLine: string) => void) => () => void;
@@ -54,6 +58,13 @@ const api: PackPanelApi = {
   completeMicrosoftLogin: () => ipcRenderer.invoke('launcher:completeMicrosoftLogin'),
   launchInstance: (options) => ipcRenderer.invoke('launcher:launchInstance', options),
   stopInstance: () => ipcRenderer.invoke('launcher:stopInstance'),
+  checkProgramUpdate: () => ipcRenderer.invoke('launcher:checkProgramUpdate'),
+  applyProgramUpdate: () => ipcRenderer.invoke('launcher:applyProgramUpdate'),
+  onProgramUpdate: callback => {
+    const subscription = (_event: unknown, value: LauncherUpdateState) => callback(value);
+    ipcRenderer.on('launcher:programUpdate', subscription);
+    return () => ipcRenderer.removeListener('launcher:programUpdate', subscription);
+  },
   onProgress: (callback) => {
     const subscription = (_event: any, value: EngineProgressEvent) => callback(value);
     ipcRenderer.on('launcher:progress', subscription);

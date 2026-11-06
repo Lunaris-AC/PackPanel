@@ -8,6 +8,7 @@ dist/
 !.env.example
 *.pem
 *.key
+.packpanel-signing/
 validation-session.json
 downloaded-launcher.zip
 *.tar.gz

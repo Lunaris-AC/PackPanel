@@ -12,6 +12,7 @@ export interface DownloadOptions {
   onProgress?: (transferredBytes: number, totalBytes: number) => void;
   maxRetries?: number;
   signal?: AbortSignal;
+  redirect?: RequestRedirect;
 }
 
 export async function downloadFile(
@@ -19,7 +20,7 @@ export async function downloadFile(
   destPath: string,
   options: DownloadOptions = {}
 ): Promise<void> {
-  const { expectedSha1, expectedSha256, expectedSize, onProgress, maxRetries = 3, signal } = options;
+  const { expectedSha1, expectedSha256, expectedSize, onProgress, maxRetries = 3, signal, redirect } = options;
   signal?.throwIfAborted();
 
   // Check if file already exists and matches expected hashes
@@ -56,6 +57,7 @@ export async function downloadFile(
       const deadline = AbortSignal.timeout(120000);
       const response = await fetch(url, {
         signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
+        redirect,
         headers: {
           'User-Agent': 'PackPanel-Launcher-Engine/2.0'
         }
@@ -74,6 +76,10 @@ export async function downloadFile(
 
       const counter = new Transform({ transform(chunk, _encoding, callback) {
         transferred += chunk.length;
+        if (expectedSize !== undefined && transferred > expectedSize) {
+          callback(new Error(`Taille de téléchargement dépassée pour ${url}`));
+          return;
+        }
         onProgress?.(transferred, totalBytes);
         callback(null, chunk);
       }});

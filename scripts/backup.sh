@@ -19,9 +19,14 @@ docker compose exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POST
 cp .env "$TEMP_DIR/environment.env"
 git rev-parse HEAD > "$TEMP_DIR/source-commit.txt" 2>/dev/null || printf 'source archive\n' > "$TEMP_DIR/source-commit.txt"
 ITEMS=(storage)
-for item in builds public-config.json; do
+for item in builds public-config.json launcher-updates; do
   if [ -e "$DATA_DIR/$item" ]; then ITEMS+=("$item"); fi
 done
-tar -czf "$TARGET_FILE" -C "$TEMP_DIR" database.dump environment.env source-commit.txt -C "$DATA_DIR" "${ITEMS[@]}"
+METADATA=(database.dump environment.env source-commit.txt)
+if [ -s .packpanel-signing/launcher.pem ]; then
+  cp .packpanel-signing/launcher.pem "$TEMP_DIR/launcher-signing.pem"
+  METADATA+=(launcher-signing.pem)
+fi
+tar -czf "$TARGET_FILE" -C "$TEMP_DIR" "${METADATA[@]}" -C "$DATA_DIR" "${ITEMS[@]}"
 tar -tzf "$TARGET_FILE" >/dev/null
 echo "Backup verified: $TARGET_FILE"

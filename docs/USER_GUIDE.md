@@ -56,6 +56,12 @@ formats. Node.js n’est pas requis sur le poste du joueur.
 Une connexion Internet est nécessaire pour récupérer le pack, Minecraft, ses
 bibliothèques et Java si la version requise manque.
 
+Les installations Windows récentes vérifient aussi la version du programme
+PackPanel. Quand **Redémarrer et mettre à jour** apparaît, fermez Minecraft
+puis utilisez ce bouton. Le launcher conserve sa configuration et votre
+profil de jeu. Pour activer cette fonction sur un ancien launcher, installez
+une fois le dernier `.exe` de votre page joueur.
+
 Saisissez un pseudo de 3 à 16 caractères (lettres, chiffres et tiret bas), puis
 cliquez sur **Jouer / Play**. Avant chaque lancement, le client vérifie le manifeste
 et met à jour les fichiers du pack. Les sauvegardes, captures d’écran et options

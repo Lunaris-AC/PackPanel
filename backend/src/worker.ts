@@ -7,6 +7,7 @@ import { handleExtractZipImport } from './jobs/handlers/zip';
 import { handleGarbageCollection } from './jobs/handlers/gc';
 import { handleScanIncomingFolder } from './jobs/handlers/watch';
 import { buildLauncherArtifact } from './build/launcher-builder';
+import { renewWindowsRuntimeFeed } from './build/runtime-release';
 import { query } from './db';
 import { OBJECTS_DIR, UPLOADS_DIR, ENDPOINTS_DIR, BACKUPS_DIR, reloadPublicConfiguration } from './config';
 
@@ -27,9 +28,14 @@ async function runQueue(launcherOnly = false) {
   // Schedule background periodic jobs
   let lastGc = Date.now();
   let lastWatchScan = Date.now();
+  let lastRuntimeRenewal = 0;
 
   while (isRunning) {
     try {
+      if (!launcherOnly && Date.now() - lastRuntimeRenewal > 24 * 3600 * 1000) {
+        lastRuntimeRenewal = Date.now();
+        await renewWindowsRuntimeFeed().catch(error => console.error('[Worker] Launcher update metadata renewal failed:', error.message));
+      }
       // 1. Periodic GC every 6 hours
       if (!launcherOnly && Date.now() - lastGc > 6 * 3600 * 1000) {
         lastGc = Date.now();
