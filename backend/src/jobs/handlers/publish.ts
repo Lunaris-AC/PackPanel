@@ -5,6 +5,7 @@ import { query, withTransaction } from '../../db';
 import { ENDPOINTS_DIR, getFilesBaseUrl } from '../../config';
 import { linkObjectToRelease } from '../../storage/cas';
 import { buildMineLaunchedManifest, validateMineLaunchedContract, FileRecordInput } from '../../storage/manifest';
+import { isPublicPackPath } from '../../storage/paths';
 import { writeV2ManifestToEndpoint } from '../../api/routes/instances';
 
 export interface SealAndBuildReleasePayload {
@@ -98,6 +99,7 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
         [activeRelease.id]
       );
       for (const f of existingFiles.rows) {
+        if (!isPublicPackPath(f.relative_path)) continue;
         filesMap.set(f.relative_path, {
           sha256: f.sha256,
           sha1: f.sha1,
@@ -113,6 +115,7 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
       [sessionId]
     );
     for (const uf of uploadedFiles.rows) {
+      if (!isPublicPackPath(uf.relative_path)) continue;
       filesMap.set(uf.relative_path, {
         sha256: uf.sha256,
         sha1: uf.sha1,

@@ -54,6 +54,8 @@ async function waitFor(predicate, label, seconds = 60) {
   await waitFor(async () => (await api(endpoint + '/uploads/sessions/' + tusSession.id)).files.some(file => file.status === 'verified'), 'TUS upload');
   await api('/v2/instances/' + instance.id + '/publish', 'POST');
   const zip = new AdmZip(); zip.addFile('config/zip-check.txt', Buffer.from('zip-test\n'));
+  zip.addFile('config/.gitignore', Buffer.from('*\n'));
+  zip.addFile('config/.git/config', Buffer.from('hidden fixture\n'));
   const zipForm = new FormData(); zipForm.set('file', new Blob([zip.toBuffer()]), 'test.zip');
   const imported = await api(endpoint + '/uploads/zip', 'POST', zipForm);
   await waitFor(async () => { const job = (await api('/jobs/' + imported.jobId)).job; if (job.status === 'failed') throw new Error(job.error_message); return job.status === 'completed'; }, 'ZIP extraction');
@@ -61,6 +63,7 @@ async function waitFor(predicate, label, seconds = 60) {
   await api('/v2/instances/' + instance.id + '/publish', 'POST');
   manifest = await api('/v2/instances/' + instance.id + '/manifest');
   assert.ok(manifest.files.some(file => file.path === 'config/zip-check.txt'));
+  assert.ok(manifest.files.every(file => !file.path.split('/').some(segment => segment.startsWith('.'))));
   assert.ok(manifest.files.some(file => file.path === 'config/tus-check.txt'));
   const optionalPath = 'config/optional-audit.txt';
   await api(endpoint + '/explorer/save-file?draft=true', 'POST', { path: optionalPath, content: 'Optional fixture\n' });

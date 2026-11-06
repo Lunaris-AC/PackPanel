@@ -12,7 +12,7 @@ import { getWorkingRelease, handleSealAndBuildRelease, handlePublishRelease } fr
 import { buildLauncherArtifact, reserveLauncherBuild } from '../../build/launcher-builder';
 import { storeBufferInCas, getCasObjectPath } from '../../storage/cas';
 import { hashBuffer } from '../../storage/hasher';
-import { sanitizeRelativePath } from '../../storage/paths';
+import { isPublicPackPath, sanitizeRelativePath } from '../../storage/paths';
 import { launcherArchivePath, sendLauncherArchive } from './player';
 
 const InstanceCreateSchema = z.object({
@@ -814,7 +814,7 @@ export async function buildInstanceManifestV2(instanceId: string, dbQuery: typeo
 
   const baseUrl = `${getFilesBaseUrl()}/${inst.endpoint_slug}/releases/${rel.release_id}`;
 
-  const files = filesRes.rows.map(f => ({
+  const files = filesRes.rows.filter(f => isPublicPackPath(f.relative_path)).map(f => ({
     path: f.relative_path,
     sha1: f.sha1,
     sha256: f.sha256,

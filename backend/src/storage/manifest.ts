@@ -1,4 +1,4 @@
-import { encodeUrlPath } from './paths';
+import { encodeUrlPath, isPublicPackPath } from './paths';
 
 export interface MineLaunchedFileEntry {
   path: string;
@@ -42,6 +42,7 @@ export function buildMineLaunchedManifest(
   const fileItems: FileRecordInput[] = [];
 
   for (const item of files) {
+    if (!isPublicPackPath(item.relativePath)) continue;
     if (item.isDir) {
       let p = item.relativePath;
       if (!p.endsWith('/')) p += '/';

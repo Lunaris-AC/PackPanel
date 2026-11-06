@@ -26,6 +26,11 @@ export function assertSanitizedRelativePath(inputPath: string, isDirectory: bool
   return res.normalizedPath;
 }
 
+// The public files listener denies a path if any segment starts with a dot.
+export function isPublicPackPath(relativePath: string): boolean {
+  return !relativePath.split('/').some(segment => segment.startsWith('.'));
+}
+
 
 export function sanitizeRelativePath(inputPath: string, isDirectory: boolean = false): SanitizedPathResult {
   if (!inputPath || typeof inputPath !== 'string') {

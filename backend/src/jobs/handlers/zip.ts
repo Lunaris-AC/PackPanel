@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
 import yauzl from 'yauzl';
 import { query, withTransaction } from '../../db';
-import { sanitizeRelativePath } from '../../storage/paths';
+import { isPublicPackPath, sanitizeRelativePath } from '../../storage/paths';
 import { storeObjectFromPath } from '../../storage/cas';
 import { config, UPLOADS_DIR } from '../../config';
 import { JobQueue } from '../queue';
@@ -127,6 +127,7 @@ export async function handleExtractZipImport(payload: ExtractZipPayload): Promis
       const validation = sanitizeRelativePath(rawPath);
       if (!validation.valid || !validation.normalizedPath) throw new Error(validation.error ?? 'Chemin ZIP invalide');
       const cleanPath = validation.normalizedPath;
+      if (!isPublicPackPath(cleanPath)) continue;
       const normalized = cleanPath.toLowerCase();
       if (seen.has(normalized)) throw new Error(`L'archive contient plusieurs fichiers au chemin "${cleanPath}".`);
       seen.add(normalized);
