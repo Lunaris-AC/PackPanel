@@ -329,7 +329,7 @@ ipcMain.handle('launcher:launchInstance', async (_event: any, options: {
 });
 
 ipcMain.handle('launcher:stopInstance', async () => {
-  engine.stopInstance();
+  await engine.stopInstance();
 });
 
 // App lifecycle

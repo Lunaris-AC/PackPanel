@@ -20,6 +20,7 @@ const translations = {
     logCopied: 'Diagnostic copié.', logEmpty: 'Aucun diagnostic disponible.',
     optionalTitle: 'Fichiers facultatifs', optionalHint: 'Vos choix s’appliqueront lors de la prochaine préparation ou du prochain lancement.',
     ready: 'Prêt à jouer.', preparing: 'Préparation…', runningButton: 'Jeu en cours', stopping: 'Arrêt en cours…', cancelling: 'Annulation après l’étape en cours…', cancel: 'Annuler le lancement', stopped: 'Minecraft est arrêté.',
+    stopUnavailable: 'Fermez Minecraft depuis sa fenêtre ou réessayez quand le jeu répond.',
     resolving_version: 'Vérification de Minecraft et du modloader…', syncing_files: 'Mise à jour des fichiers du jeu…', checking_java: 'Vérification de Java…',
     downloading_java: 'Téléchargement de Java…', downloading_assets: 'Préparation des fichiers Minecraft…', launching: 'Démarrage de Minecraft…', running: 'Minecraft est en cours d’exécution.',
     downloadingFile: 'Téléchargement : {file}', assets: 'Textures et sons {count}', libraries: 'Bibliothèques {count}',
@@ -46,6 +47,7 @@ const translations = {
     logCopied: 'Diagnostics copied.', logEmpty: 'No diagnostics yet.',
     optionalTitle: 'Optional files', optionalHint: 'Your choices will take effect the next time you prepare or launch the pack.',
     ready: 'Ready to play.', preparing: 'Preparing…', runningButton: 'Game running', stopping: 'Stopping…', cancelling: 'Cancelling after the current step…', cancel: 'Cancel launch', stopped: 'Minecraft has stopped.',
+    stopUnavailable: 'Close Minecraft from its window or try again once the game is responding.',
     resolving_version: 'Checking Minecraft and the mod loader…', syncing_files: 'Updating game files…', checking_java: 'Checking Java…',
     downloading_java: 'Downloading Java…', downloading_assets: 'Preparing Minecraft files…', launching: 'Starting Minecraft…', running: 'Minecraft is running.',
     downloadingFile: 'Downloading: {file}', assets: 'Textures and sounds {count}', libraries: 'Libraries {count}',
@@ -182,6 +184,7 @@ async function action(fn) {
     log(error.message);
     const message = error.message || '';
     const key = message.includes('PACKPANEL_MANIFEST_UNAVAILABLE') ? 'manifestError'
+      : message.includes('PACKPANEL_STOP_UNAVAILABLE') ? 'stopUnavailable'
       : /pseudo|username|nom d.utilisateur/i.test(message) ? 'nicknameError' : /guillemet/i.test(message) ? 'argumentError' : /mémoire|ramMb/i.test(message) ? 'memoryError' : 'genericError';
     status(key, {}, true);
   }

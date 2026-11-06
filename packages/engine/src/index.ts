@@ -188,11 +188,11 @@ export class MinecraftEngine extends EventEmitter {
   /**
    * Stops the currently running instance.
    */
-  stopInstance(): void {
+  stopInstance(): Promise<void> {
     if (this.preparation && !this.preparation.signal.aborted) {
       this.preparation.abort();
       this.emit('progress', { step: 'idle', progress: 0, message: 'Arrêt en cours de la préparation...' });
     }
-    this.launcher.kill();
+    return this.launcher.kill();
   }
 }

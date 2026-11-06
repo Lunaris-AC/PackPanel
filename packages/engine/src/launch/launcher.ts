@@ -6,6 +6,7 @@ import { createInterface } from 'node:readline';
 import { AuthProfile, InstanceManifestV2 } from '@packpanel/protocol';
 import { MojangVersionJson } from '../mojang/version.js';
 import { evaluateRules } from '../utils/platform.js';
+import { closeWindowsGame } from './windows-close.js';
 
 export interface LaunchOptions {
   javaPath: string;
@@ -201,13 +202,23 @@ export class MinecraftLauncher extends EventEmitter {
     return proc;
   }
 
-  /**
-   * Terminates the running Minecraft instance
-   */
-  kill(): void {
-    if (this.process) {
-      this.stopping = true;
-      this.process.kill();
+  async kill(): Promise<void> {
+    const game = this.process;
+    if (!game?.pid || game.exitCode !== null || game.signalCode !== null) return;
+
+    if (process.platform === 'win32') {
+      // Node terminates processes abruptly on Windows, even with SIGTERM.
+      try {
+        await closeWindowsGame(game.pid);
+      } catch (error) {
+        if (game.exitCode === null && game.signalCode === null) {
+          throw new Error('PACKPANEL_STOP_UNAVAILABLE: Minecraft n’a pas répondu à la demande de fermeture.', { cause: error });
+        }
+      }
+      return;
     }
+
+    this.stopping = true;
+    game.kill();
   }
 }
