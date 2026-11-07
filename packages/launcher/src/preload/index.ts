@@ -14,6 +14,11 @@ export interface PackPanelApi {
   getPackStatus: () => Promise<PackStatus>;
   setOptionalFile: (choice: { path: string; enabled: boolean }) => Promise<void>;
   prepareInstance: () => Promise<void>;
+  getCloudSettings: () => Promise<{ available: boolean; backupEnabled: boolean; backupActive: boolean; shareLogs: boolean }>;
+  configureBackup: (key?: string) => Promise<void>;
+  copyBackupKey: () => Promise<boolean>;
+  setShareLogs: (enabled: boolean) => Promise<void>;
+  onCloudIssue: (listener: () => void) => void;
   getLastLog: () => Promise<string>;
   copyDiagnostics: () => Promise<boolean>;
   copyServerAddress: (value: string) => Promise<void>;
@@ -50,6 +55,11 @@ const api: PackPanelApi = {
   getPackStatus: () => ipcRenderer.invoke('launcher:getPackStatus'),
   setOptionalFile: choice => ipcRenderer.invoke('launcher:setOptionalFile', choice),
   prepareInstance: () => ipcRenderer.invoke('launcher:prepareInstance'),
+  getCloudSettings: () => ipcRenderer.invoke('launcher:getCloudSettings'),
+  configureBackup: key => ipcRenderer.invoke('launcher:configureBackup', key),
+  copyBackupKey: () => ipcRenderer.invoke('launcher:copyBackupKey'),
+  setShareLogs: enabled => ipcRenderer.invoke('launcher:setShareLogs', enabled),
+  onCloudIssue: listener => { ipcRenderer.on('launcher:cloudIssue', () => listener()); },
   getLastLog: () => ipcRenderer.invoke('launcher:getLastLog'),
   copyDiagnostics: () => ipcRenderer.invoke('launcher:copyDiagnostics'),
   copyServerAddress: value => ipcRenderer.invoke('launcher:copyServerAddress', value),

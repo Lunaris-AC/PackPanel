@@ -17,6 +17,7 @@ import { instanceRoutes } from './routes/instances';
 import { launcherRoutes } from './routes/launchers';
 import { catalogRoutes } from './routes/catalog';
 import { systemRoutes } from './routes/system';
+import { playerServicesRoutes } from './routes/player-services';
 import { playerRoutes } from './routes/player';
 
 import { authenticateRequest, enforceOriginCheck, isAllowedOrigin } from '../auth/middleware';
@@ -101,6 +102,7 @@ async function main() {
   await server.register(userRoutes, { prefix: '/api' });
   await server.register(instanceRoutes, { prefix: '/api/v2' });
   await server.register(playerRoutes, { prefix: '/api/v2' });
+  await server.register(playerServicesRoutes, { prefix: '/api/v2/player-services' });
   await server.register(launcherRoutes, { prefix: '/api/v2' });
   await server.register(catalogRoutes, { prefix: '/api/v2' });
   await server.register(systemRoutes, { prefix: '/api/system' });

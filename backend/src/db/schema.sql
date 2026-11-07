@@ -288,6 +288,17 @@ ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS instance_id UUID REFERENCES
 ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS shared_at TIMESTAMPTZ;
 ALTER TABLE launcher_builds ADD COLUMN IF NOT EXISTS artifact_format VARCHAR(16) NOT NULL DEFAULT 'zip'
     CHECK (artifact_format IN ('zip', 'installer'));
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'launcher_builds'::regclass AND conname = 'launcher_builds_platform_check') THEN
+        ALTER TABLE launcher_builds DROP CONSTRAINT IF EXISTS launcher_builds_target_os_check;
+        ALTER TABLE launcher_builds ADD CONSTRAINT launcher_builds_platform_check CHECK (target_os IN ('windows', 'linux', 'macos', 'macos-arm64', 'all'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'launcher_builds'::regclass AND conname = 'launcher_builds_format_check') THEN
+        ALTER TABLE launcher_builds DROP CONSTRAINT IF EXISTS launcher_builds_artifact_format_check;
+        ALTER TABLE launcher_builds ADD CONSTRAINT launcher_builds_format_check CHECK (artifact_format IN ('zip', 'installer', 'native'));
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_launcher_builds_shared ON launcher_builds(instance_id, target_os, shared_at DESC)
 WHERE shared_at IS NOT NULL AND status = 'completed';
 -- Old synchronous builds can be left in progress after the API is restarted.
@@ -304,3 +315,24 @@ ALTER TABLE releases ADD COLUMN IF NOT EXISTS release_notes TEXT;
 ALTER TABLE instances ADD COLUMN IF NOT EXISTS launcher_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE instances ADD COLUMN IF NOT EXISTS launcher_project_id UUID REFERENCES launcher_projects(id) ON DELETE SET NULL;
 
+ALTER TABLE instances ADD COLUMN IF NOT EXISTS player_options_backup BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS player_options_backups (
+    instance_id UUID NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+    owner CHAR(64) NOT NULL,
+    revision INTEGER NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (instance_id, owner)
+);
+
+CREATE TABLE IF NOT EXISTS player_game_logs (
+    instance_id UUID NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+    id UUID NOT NULL,
+    player VARCHAR(16) NOT NULL,
+    exit_code INTEGER NOT NULL,
+    log TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (instance_id, id)
+);
+CREATE INDEX IF NOT EXISTS idx_player_game_logs_recent ON player_game_logs(instance_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_player_game_logs_retention ON player_game_logs(created_at);

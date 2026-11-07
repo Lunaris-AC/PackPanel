@@ -9,15 +9,20 @@ interface PlayerPack {
   name: string;
   description: string;
   release: { id: string; notes?: string; publishedAt?: string; minecraftVersion?: string; loader?: string };
-  downloads: Array<{ platform: string; format?: 'zip' | 'installer'; version: string; bytes: number; sha256: string; url: string }>;
+  downloads: Array<{ platform: string; format?: 'zip' | 'installer' | 'native'; extension?: string; version: string; bytes: number; sha256: string; url: string }>;
 }
 
-const systems: Record<string, string> = { windows: 'Windows', linux: 'Linux', macos: 'macOS' };
+const systems: Record<string, string> = { windows: 'Windows', linux: 'Linux', macos: 'macOS', 'macos-arm64': 'macOS' };
 
 export function PlayerDownloadPage() {
   const { slug } = useParams();
   const { language, setLanguage } = useTranslation();
   const text = (fr: string, en: string) => language === 'fr' ? fr : en;
+  const nativeInstructions: Record<string, string> = {
+    windows: text('Ouvrez le MSI, puis lancez PackPanel depuis le menu Démarrer.', 'Open the MSI, then launch PackPanel from the Start menu.'),
+    linux: text('Rendez l’AppImage exécutable dans ses propriétés, puis ouvrez-la.', 'Make the AppImage executable in its file properties, then open it.'),
+    macos: text('Ouvrez le DMG et glissez l’application dans Applications.', 'Open the DMG and drag the app into Applications.')
+  };
   const [pack, setPack] = useState<PlayerPack | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'error'>('loading');
   const [attempt, setAttempt] = useState(0);
@@ -102,11 +107,14 @@ export function PlayerDownloadPage() {
                 {pack.downloads.map(download => (
                   <li key={download.platform} className="rounded-xl border border-white/10 bg-white/5 p-4 flex flex-col">
                     <h3 className="flex items-center gap-2 font-semibold"><Laptop className="size-4 text-indigo-300" />
-                      {systems[download.platform] ?? text('Tous les systèmes', 'All platforms')} <span className="text-xs text-slate-400">x64</span>
+                      {systems[download.platform] ?? text('Tous les systèmes', 'All platforms')} <span className="text-xs text-slate-400">
+                        {download.platform === 'macos-arm64' ? 'Apple Silicon' : download.platform === 'macos' ? 'Intel' : 'x64'}
+                      </span>
                     </h3>
                     <p className="text-xs text-slate-300 mt-2">v{download.version} · {formatBytes(download.bytes)}</p>
                     <p className="text-xs text-slate-300 mt-2 mb-4 break-words">
-                      {download.format === 'installer'
+                      {download.format === 'native' ? nativeInstructions[download.platform === 'macos-arm64' ? 'macos' : download.platform]
+                        : download.format === 'installer'
                         ? text('Ouvrez le fichier .exe. Le launcher sera disponible dans le menu Démarrer.', 'Open the .exe. The launcher will be available from the Start menu.')
                         : text('Extrayez tout le ZIP, puis ouvrez ', 'Extract the entire ZIP, then open ') + (
                           download.platform === 'windows' ? 'windows/electron.exe' :
@@ -114,9 +122,11 @@ export function PlayerDownloadPage() {
                             download.platform === 'macos' ? 'macos/Electron.app' : 'README.txt')}
                     </p>
                     <a href={download.url} className="mt-auto flex justify-center gap-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 py-2 text-sm font-semibold">
-                      <ArrowDownToLine className="size-4" /> {download.format === 'installer'
-                        ? text('Télécharger l’installateur (.exe)', 'Download installer (.exe)')
-                        : text('Télécharger le ZIP', 'Download ZIP')}
+                      <ArrowDownToLine className="size-4" /> {download.format === 'native'
+                        ? `${text('Télécharger', 'Download')} ${download.extension}`
+                        : download.format === 'installer'
+                          ? text('Télécharger l’installateur (.exe)', 'Download installer (.exe)')
+                          : text('Télécharger le ZIP', 'Download ZIP')}
                     </a>
                     {download.sha256 && <button onClick={() => copy(download.sha256)} className="flex justify-center items-center gap-2 mt-3 text-xs text-slate-300 hover:text-white">
                       {copied === download.sha256 ? <Check className="size-3" /> : <Copy className="size-3" />}

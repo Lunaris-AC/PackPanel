@@ -14,7 +14,7 @@ const isOptional = (file: InstanceFileEntryV2) => ['optional', 'default_on', 'de
 function protectedPathMatcher(manifest: InstanceManifestV2) {
   const normalize = (value: string) => value.replace(/\\+/g, '/').toLowerCase();
   const protectedPaths = [
-    'saves/', 'screenshots/', 'options.txt', 'optionsof.txt', 'usercache.json', 'servers.dat',
+    'saves/', 'screenshots/', 'options.txt', 'optionsof.txt', 'optionsshaders.txt', 'usercache.json', 'servers.dat',
     ...(manifest.protectedPaths || []),
     ...manifest.files.filter(file => file.policy === 'protected' || file.policy === 'user_managed').map(file => file.path)
   ].map(normalize);
@@ -80,7 +80,7 @@ export class InstanceSynchronizer {
         minecraftVersion: '1.20.1', // Default fallback
         loader: { type: 'fabric' },
         java: { majorVersion: 17 },
-        protectedPaths: ['saves/', 'screenshots/', 'options.txt', 'optionsof.txt', 'usercache.json', 'servers.dat'],
+        protectedPaths: ['saves/', 'screenshots/', 'options.txt', 'optionsof.txt', 'optionsshaders.txt', 'usercache.json', 'servers.dat'],
         cleanupRules: cleanupRules.length > 0 ? cleanupRules : ['mods'],
         files,
         updatedAt: new Date().toISOString()

@@ -3,6 +3,8 @@ import { query } from '../../db';
 import { getObjectPath } from '../../storage/cas';
 
 export async function handleGarbageCollection(): Promise<{ deletedObjects: number; freedBytes: number }> {
+  await query("DELETE FROM player_game_logs WHERE created_at < NOW() - INTERVAL '30 days'");
+
   // 1. Reconcile ref_count for all objects
   await query(`
     UPDATE objects

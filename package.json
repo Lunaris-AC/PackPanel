@@ -20,7 +20,7 @@
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
-    "electron": "^44.5.1",
+    "electron": "^44.10.2",
     "playwright": "^1.63.0"
   }
 }

@@ -648,19 +648,60 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       return reply.send({ url: mediaUrl, sha256 });
     });
 
+    authed.put('/instances/:id/player-options-backup', {
+      preHandler: [requireRole(['admin'])]
+    }, async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body);
+      if (!parsed.success) return reply.code(400).send({ error: 'Réglage invalide' });
+      const result = await query(
+        'UPDATE instances SET player_options_backup = $2 WHERE id::text = $1 RETURNING id',
+        [id, parsed.data.enabled]
+      );
+      if (!result.rowCount) return reply.code(404).send({ error: 'Instance introuvable' });
+      await recordAuditLog(req.user!.userId, 'set_player_options_backup', 'instance', id, parsed.data, req.ip);
+      return { enabled: parsed.data.enabled };
+    });
+
+    authed.get('/instances/:id/player-game-logs', {
+      preHandler: [requireRole(['admin'])]
+    }, async (req, reply) => {
+      const { id } = req.params as { id: string };
+      reply.header('Cache-Control', 'private, no-store');
+      const result = await query(
+        `SELECT id, player, exit_code, created_at FROM player_game_logs
+         WHERE instance_id::text = $1 AND created_at >= NOW() - INTERVAL '30 days'
+         ORDER BY created_at DESC, id DESC LIMIT 200`, [id]
+      );
+      return { logs: result.rows };
+    });
+
+    authed.get('/instances/:id/player-game-logs/:logId', {
+      preHandler: [requireRole(['admin'])]
+    }, async (req, reply) => {
+      const { id, logId } = req.params as { id: string; logId: string };
+      reply.header('Cache-Control', 'private, no-store');
+      const result = await query(
+        `SELECT log FROM player_game_logs WHERE instance_id::text = $1 AND id::text = $2
+         AND created_at >= NOW() - INTERVAL '30 days'`, [id, logId]
+      );
+      if (!result.rowCount) return reply.code(404).send({ error: 'Journal introuvable' });
+      return result.rows[0];
+    });
+
     // 11. Trigger Launcher Build
     authed.post('/instances/:id/launcher/build', {
       preHandler: [requireRole(['admin', 'operator'])]
     }, async (req, reply) => {
       const { id } = req.params as { id: string };
       const parsed = z.object({
-        targetOs: z.enum(['windows', 'linux', 'macos', 'all']).default('windows'),
+        targetOs: z.enum(['windows', 'linux', 'macos', 'macos-arm64', 'all']).default('windows'),
         background: z.boolean().default(false),
-        artifactFormat: z.enum(['zip', 'installer']).default('zip')
-      }).refine(data => data.artifactFormat !== 'installer' || data.targetOs === 'windows').safeParse(req.body ?? {});
+        artifactFormat: z.enum(['zip', 'installer', 'native']).default('zip')
+      }).refine(data => data.artifactFormat === 'zip' || (data.artifactFormat === 'native' ? data.targetOs !== 'all' : data.targetOs === 'windows')).safeParse(req.body ?? {});
       if (!parsed.success) return reply.status(400).send({ error: 'Plateforme ou mode de génération invalide' });
       const { targetOs, background, artifactFormat } = parsed.data;
-      const enqueue = background || artifactFormat === 'installer';
+      const enqueue = background || artifactFormat !== 'zip';
 
       const instRes = await query('SELECT id, endpoint_id, launcher_enabled, launcher_project_id FROM instances WHERE id::text = $1 OR slug = $1', [id]);
       const inst = instRes.rows[0];

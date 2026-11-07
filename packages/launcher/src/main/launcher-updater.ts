@@ -18,6 +18,13 @@ export function installedWindowsRoot(instanceId: string, executable: string): st
   const root = path.join(process.env.LOCALAPPDATA, 'Programs', 'PackPanel', instanceId);
   if (path.resolve(executable).toLowerCase() === path.join(root, 'app', 'PackPanel.exe').toLowerCase() &&
       fs.existsSync(path.join(root, 'PackPanelStart.exe'))) return root;
+
+  const cached = path.dirname(path.dirname(path.resolve(executable)));
+  const cacheParent = path.join(process.env.LOCALAPPDATA, 'PackPanel', 'Runtime', instanceId);
+  if (path.dirname(cached).toLowerCase() === cacheParent.toLowerCase() &&
+      /^[a-f0-9-]{36}$/i.test(path.basename(cached)) &&
+      path.resolve(executable).toLowerCase() === path.join(cached, 'app', 'PackPanel.exe').toLowerCase() &&
+      fs.existsSync(path.join(cached, 'ready'))) return cached;
 }
 
 async function readEnvelope(feed: string): Promise<unknown> {

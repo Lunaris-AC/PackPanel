@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, ipcMain, Menu, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -12,6 +13,7 @@ import {
   DeviceCodeResponse,
   InstanceSynchronizer
 } from '@packpanel/engine';
+import { PlayerCloud } from './player-cloud';
 import { packSummarySchema, redactDiagnostics, summarizePack } from './player-state';
 import { downloadLauncherUpgrade, installLauncherUpgrade, installedWindowsRoot, type LauncherUpdateState } from './launcher-updater';
 
@@ -30,6 +32,8 @@ if (!fs.existsSync(dataDir)) {
 const engine = new MinecraftEngine({ baseDir: dataDir });
 let launchInProgress = false;
 let upgrading = false;
+let configuringBackup = false;
+let quitAfterGame = false;
 let preparedUpgrade: Awaited<ReturnType<typeof downloadLauncherUpgrade>>;
 let updateCheck: Promise<LauncherUpdateState> | undefined;
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -66,6 +70,36 @@ function readOptionalChoices(): Record<string, boolean> {
   catch { return {}; }
 }
 
+function playerCloud() {
+  return new PlayerCloud(configuredInstance(),
+    () => readPlayerFile('player-cloud.json'),
+    content => writePlayerFile('player-cloud.json', content));
+}
+
+let gameSession: { id: string; player: string; token: string; played?: boolean; saveOptions?: () => Promise<void> } | undefined;
+
+function reportCloudIssue() {
+  recordLog('PackPanel: Minecraft options could not be synchronized.');
+  mainWindow?.webContents.send('launcher:cloudIssue');
+}
+
+async function finishGame(exitCode: number) {
+  const session = gameSession;
+  gameSession = undefined;
+  if (session?.played) {
+    const cloud = playerCloud();
+    const log = liveLog.split('\n').filter(line => !/\[(?:CHAT|WHISPER)\]/i.test(line)).join('\n').slice(-30_000);
+    await Promise.all([
+      session.saveOptions?.().catch(reportCloudIssue),
+      cloud.sendLog({ id: session.id, player: session.player, exitCode, log })
+        .catch(() => recordLog('PackPanel: Minecraft diagnostics could not be sent.'))
+    ]);
+  }
+  launchInProgress = false;
+  flushLog();
+  if (quitAfterGame && !mainWindow) app.quit();
+}
+
 let liveLog = '';
 let logTimer: ReturnType<typeof setTimeout> | undefined;
 function flushLog() {
@@ -76,14 +110,15 @@ function flushLog() {
   catch (error) { console.warn('Could not save launcher diagnostics', error); }
 }
 function recordLog(line: string) {
-  const cleaned = redactDiagnostics(line, os.homedir());
+  const token = gameSession?.token;
+  const cleaned = redactDiagnostics(token && token.length > 12 ? line.split(token).join('[redacted]') : line, os.homedir());
   liveLog = `${liveLog}${cleaned}\n`.slice(-60_000);
   mainWindow?.webContents.send('launcher:log', cleaned);
   logTimer ??= setTimeout(flushLog, 1000);
   logTimer.unref();
 }
 function beginPreparation() {
-  if (launchInProgress || upgrading) throw new Error('Une instance est déjà en cours de lancement ou d’exécution.');
+  if (launchInProgress || upgrading || configuringBackup) throw new Error('Une instance est déjà en cours de lancement ou d’exécution.');
   launchInProgress = true;
   liveLog = '';
   recordLog(new Date().toISOString());
@@ -95,20 +130,20 @@ engine.on('packReady', (manifest: InstanceManifestV2) => {
   catch (error) { recordLog(String(error)); }
   mainWindow?.webContents.send('launcher:packReady', pack);
 });
-engine.on('progress', event => mainWindow?.webContents.send('launcher:progress', event));
-engine.on('exit', () => {
-  launchInProgress = false;
-  flushLog();
+engine.on('progress', event => {
+  if (event.step === 'launching' && gameSession) gameSession.played = true;
+  mainWindow?.webContents.send('launcher:progress', event);
+});
+engine.on('exit', async () => {
+  await finishGame(0);
   mainWindow?.webContents.send('launcher:progress', { step: 'stopped', progress: 0, message: 'Minecraft est arrêté.' });
 });
-function reportCrash(exitCode: number, report?: string) {
-  launchInProgress = false;
-  recordLog(report ? `Minecraft (${exitCode})\n${report}` : `Minecraft (${exitCode})`);
-  flushLog();
+engine.on('crash', async ({ exitCode, crashReport }) => {
+  recordLog(crashReport ? `Minecraft (${exitCode})\n${crashReport}` : `Minecraft (${exitCode})`);
+  await finishGame(exitCode);
   mainWindow?.webContents.send('launcher:crash', { exitCode });
-}
-engine.on('crash', data => reportCrash(data.exitCode, data.crashReport));
-engine.on('error', error => reportCrash(-1, error.message));
+});
+engine.on('error', error => recordLog(error.message));
 
 // Embedded or cached launcher configuration
 function loadLauncherConfig(): LauncherConfigV2 {
@@ -261,7 +296,24 @@ ipcMain.handle('launcher:prepareInstance', async () => {
   } finally {
     launchInProgress = false;
     flushLog();
+    if (quitAfterGame && !mainWindow) app.quit();
   }
+});
+ipcMain.handle('launcher:getCloudSettings', () => playerCloud().settings());
+ipcMain.handle('launcher:configureBackup', async (_event, value: unknown) => {
+  if (launchInProgress || configuringBackup) throw new Error('Fermez Minecraft avant de modifier la sauvegarde.');
+  configuringBackup = true;
+  try { await playerCloud().configureBackup(z.string().max(100).optional().parse(value)); }
+  finally { configuringBackup = false; }
+});
+ipcMain.handle('launcher:copyBackupKey', () => {
+  const key = playerCloud().copyKey();
+  if (!key) return false;
+  clipboard.writeText(key);
+  return true;
+});
+ipcMain.handle('launcher:setShareLogs', (_event, value: unknown) => {
+  playerCloud().setShareLogs(z.boolean().parse(value));
 });
 ipcMain.handle('launcher:getLastLog', async () => liveLog || readPlayerFile('last-launch.log'));
 ipcMain.handle('launcher:copyDiagnostics', async () => {
@@ -332,6 +384,10 @@ ipcMain.handle('launcher:launchInstance', async (_event: any, options: {
   }
 
   beginPreparation();
+  const session: NonNullable<typeof gameSession> = {
+    id: randomUUID(), player: currentProfile.name, token: currentProfile.accessToken
+  };
+  gameSession = session;
   try { await engine.launchInstance({
     manifestUrl: targetInstance.manifestUrl,
     gameDir: instanceGameDir,
@@ -339,11 +395,16 @@ ipcMain.handle('launcher:launchInstance', async (_event: any, options: {
     customJavaPath: options.customJavaPath,
     optionalFiles: readOptionalChoices(),
     maxMemoryMb: options.ramMb || readSettings().ramMb,
-    customJvmArgs: parseJvmArguments(readSettings().customJvmArgs)
+    customJvmArgs: parseJvmArguments(readSettings().customJvmArgs),
+    beforeLaunch: async () => {
+      session.saveOptions = await playerCloud().prepareOptions(instanceGameDir).catch(() => {
+        reportCloudIssue();
+        return undefined;
+      });
+    }
   }); } catch (error) {
-    launchInProgress = false;
     recordLog(String(error));
-    flushLog();
+    await finishGame(-1);
     throw error;
   }
 });
@@ -396,8 +457,11 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform === 'darwin') return;
+  if (launchInProgress) quitAfterGame = true;
+  else app.quit();
 });
-app.on('before-quit', flushLog);
+app.on('before-quit', event => {
+  if (launchInProgress) event.preventDefault();
+  flushLog();
+});

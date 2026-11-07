@@ -7,6 +7,7 @@ import { appendDesktopRuntime } from './desktop-package';
 import { hashFile } from '../storage/hasher';
 import { JobQueue } from '../jobs/queue';
 import { buildWindowsInstaller } from './windows-installer';
+import { buildPlayerPackage, playerExtensions } from './player-package';
 import { runtimeForInstaller } from './runtime-release';
 
 function createZipArchive(options: any) {
@@ -27,10 +28,10 @@ const BUILDS_DIR = path.join(DATA_DIR, 'builds');
 
 export interface BuildLauncherOptions {
   launcherProjectId: string;
-  targetOs: 'windows' | 'linux' | 'macos' | 'all';
+  targetOs: 'windows' | 'linux' | 'macos' | 'macos-arm64' | 'all';
   userId?: string;
   instanceId: string;
-  artifactFormat?: 'zip' | 'installer';
+  artifactFormat?: 'zip' | 'installer' | 'native';
 }
 
 export async function reserveLauncherBuild(options: BuildLauncherOptions, background: boolean) {
@@ -74,10 +75,12 @@ export async function buildLauncherArtifact(buildId: string, instanceId: string)
   if (!proj) return null;
   const { version, target_os: targetOs } = proj as { version: string; target_os: BuildLauncherOptions['targetOs'] };
   const installer = targetOs === 'windows' && proj.artifact_format === 'installer';
-  const artifactFilename = `launcher-${proj.slug}-${targetOs}-v${version}-${buildId}${installer ? '-setup.exe' : '.zip'}`;
+  const native = targetOs !== 'all' && proj.artifact_format === 'native' ? targetOs : undefined;
+  const extension = native ? playerExtensions[native] : installer ? '-setup.exe' : '.zip';
+  const artifactFilename = `launcher-${proj.slug}-${targetOs}-v${version}-${buildId}${extension}`;
   const artifactPath = path.join(BUILDS_DIR, artifactFilename);
   const temporaryPath = artifactPath + '.part';
-  const runtimePath = installer ? temporaryPath + '.zip' : temporaryPath;
+  const runtimePath = installer || native ? temporaryPath + '.zip' : temporaryPath;
   try {
     await fs.promises.mkdir(BUILDS_DIR, { recursive: true, mode: 0o755 });
     await query("UPDATE launcher_builds SET status = 'building', logs = $2 WHERE id = $1",
@@ -123,7 +126,7 @@ export async function buildLauncherArtifact(buildId: string, instanceId: string)
       }))
     };
 
-    const archive = createZipArchive(installer ? { store: true } : { zlib: { level: 3 } });
+    const archive = createZipArchive(installer || native ? { store: true } : { zlib: { level: 3 } });
     const output = fs.createWriteStream(runtimePath);
     const controller = new AbortController();
 
@@ -146,12 +149,13 @@ Lancement :
 `;
     archive.append(readme, { name: 'README.txt' });
 
-    const targets = targetOs === 'all' ? ['windows', 'linux', 'macos'] as const : [targetOs];
+    const targets = targetOs === 'all' ? ['windows', 'linux', 'macos'] as const : [targetOs === 'macos-arm64' ? 'macos' : targetOs];
+    const architecture = targetOs === 'macos-arm64' ? 'arm64' : 'x64';
     try {
       await Promise.all([pipeline(archive, output), (async () => {
         for (const target of targets) {
           await query('UPDATE launcher_builds SET stage = $2 WHERE id = $1', [buildId, target]);
-          await appendDesktopRuntime(archive, target, launcherConfig, controller.signal, installer ? await runtimeForInstaller() : undefined);
+          await appendDesktopRuntime(archive, target, launcherConfig, controller.signal, installer || native === 'windows' ? await runtimeForInstaller() : undefined, architecture);
         }
         await query("UPDATE launcher_builds SET stage = 'archiving' WHERE id = $1", [buildId]);
         await archive.finalize();
@@ -167,6 +171,12 @@ Lancement :
       await query("UPDATE launcher_builds SET stage = 'installer' WHERE id = $1", [buildId]);
       await buildWindowsInstaller(runtimePath, temporaryPath, {
         id: instanceId, slug: instRes.rows[0].slug, title: proj.title, version
+      });
+    }
+    if (native) {
+      await query("UPDATE launcher_builds SET stage = 'installer' WHERE id = $1", [buildId]);
+      await buildPlayerPackage(runtimePath, temporaryPath, native === 'macos-arm64' ? 'macos' : native, {
+        id: instanceId, buildId, slug: instRes.rows[0].slug, title: proj.title, version
       });
     }
     await query("UPDATE launcher_builds SET stage = 'verifying' WHERE id = $1", [buildId]);
@@ -213,6 +223,6 @@ Lancement :
     );
     throw err;
   } finally {
-    if (installer) await fs.promises.rm(runtimePath, { force: true }).catch(() => {});
+    if (runtimePath !== temporaryPath) await fs.promises.rm(runtimePath, { force: true }).catch(() => {});
   }
 }

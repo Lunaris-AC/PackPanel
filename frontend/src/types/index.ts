@@ -160,6 +160,7 @@ export interface MinecraftInstance {
   endpoint_id?: string;
   endpoint_slug?: string;
   endpoint_name?: string;
+  player_options_backup?: boolean;
   launcher_enabled?: boolean;
   launcher_project_id?: string;
   launcher_title?: string;
@@ -183,12 +184,12 @@ export interface MinecraftInstance {
 export interface LauncherBuild {
   id: string;
   launcher_project_id: string;
-  target_os: 'windows' | 'linux' | 'macos' | 'all';
+  target_os: 'windows' | 'linux' | 'macos' | 'macos-arm64' | 'all';
   version: string;
   artifact_path?: string;
   artifact_size?: number;
   artifact_sha256?: string;
-  artifact_format?: 'zip' | 'installer';
+  artifact_format?: 'zip' | 'installer' | 'native';
   instance_id?: string | null;
   shared_at?: string | null;
   status: 'pending' | 'building' | 'completed' | 'failed';

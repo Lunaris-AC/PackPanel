@@ -2,7 +2,13 @@ Unicode true
 RequestExecutionLevel user
 SilentInstall silent
 Name "PackPanel"
-OutFile "PackPanelStart.exe"
+!ifdef BUILD_ID
+  CRCCheck force
+  SetCompressor /SOLID lzma
+  OutFile "PackPanel.exe"
+!else
+  OutFile "PackPanelStart.exe"
+!endif
 
 !include "LogicLib.nsh"
 
@@ -14,30 +20,54 @@ Section
     Quit
   ${EndIf}
 
-  ${If} ${FileExists} "$EXEDIR\upgrade.pending"
-  ${AndIf} ${FileExists} "$EXEDIR\previous\PackPanel.exe"
-    ${If} ${FileExists} "$EXEDIR\app\PackPanel.exe"
+!ifdef BUILD_ID
+  StrCpy $2 "$LOCALAPPDATA\PackPanel\Runtime\${PACK_ID}\${BUILD_ID}"
+  ${IfNot} ${FileExists} "$2\ready"
+    RMDir /r "$2\app"
+    ClearErrors
+    SetOutPath "$2\app"
+    File /r "application/*"
+    IfErrors failed
+    ClearErrors
+    FileOpen $3 "$2\ready" w
+    IfErrors failed
+    FileClose $3
+  ${EndIf}
+!else
+  StrCpy $2 "$EXEDIR"
+!endif
+
+  ${If} ${FileExists} "$2\upgrade.pending"
+  ${AndIf} ${FileExists} "$2\previous\PackPanel.exe"
+    ${If} ${FileExists} "$2\app\PackPanel.exe"
       ClearErrors
-      FileOpen $0 "$EXEDIR\app\PackPanel.exe" a
+      FileOpen $0 "$2\app\PackPanel.exe" a
       IfErrors start
       FileClose $0
     ${EndIf}
-    RMDir /r "$EXEDIR\app"
+    RMDir /r "$2\app"
     ClearErrors
-    Rename "$EXEDIR\previous" "$EXEDIR\app"
+    Rename "$2\previous" "$2\app"
     IfErrors start
-    Delete "$EXEDIR\upgrade.pending"
+    Delete "$2\upgrade.pending"
   ${EndIf}
   start:
-  ${If} ${FileExists} "$EXEDIR\app\PackPanel.exe"
-  ${AndIfNot} ${FileExists} "$EXEDIR\previous\PackPanel.exe"
-    Delete "$EXEDIR\upgrade.pending"
+  ${If} ${FileExists} "$2\app\PackPanel.exe"
+  ${AndIfNot} ${FileExists} "$2\previous\PackPanel.exe"
+    Delete "$2\upgrade.pending"
   ${EndIf}
-  ${If} ${FileExists} "$EXEDIR\app\PackPanel.exe"
-    SetOutPath "$EXEDIR\app"
-    Exec '"$EXEDIR\app\PackPanel.exe"'
-  ${ElseIf} ${FileExists} "$EXEDIR\previous\PackPanel.exe"
-    SetOutPath "$EXEDIR\previous"
-    Exec '"$EXEDIR\previous\PackPanel.exe"'
+  ${If} ${FileExists} "$2\app\PackPanel.exe"
+    SetOutPath "$2\app"
+    Exec '"$2\app\PackPanel.exe"'
+  ${ElseIf} ${FileExists} "$2\previous\PackPanel.exe"
+    SetOutPath "$2\previous"
+    Exec '"$2\previous\PackPanel.exe"'
   ${EndIf}
+  Quit
+
+!ifdef BUILD_ID
+  failed:
+    MessageBox MB_ICONSTOP "PackPanel could not start. Close the launcher and try reinstalling it." /SD IDOK
+    SetErrorLevel 1
+!endif
 SectionEnd

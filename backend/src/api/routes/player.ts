@@ -45,8 +45,10 @@ export async function sendLauncherArchive(req: FastifyRequest, reply: FastifyRep
   }
 
   const filename = path.basename(file);
+  const mime = filename.endsWith('.zip') ? 'application/zip'
+    : filename.endsWith('.dmg') ? 'application/x-apple-diskimage' : 'application/octet-stream';
   reply.header('Content-Disposition', `attachment; filename="${filename}"`)
-    .type(filename.endsWith('.exe') ? 'application/octet-stream' : 'application/zip')
+    .type(mime)
     .header('Content-Length', Math.max(0, end - start + 1));
   if (req.method === 'HEAD' || !size) return reply.send();
   return reply.send(fs.createReadStream(file, { start, end }));
@@ -78,6 +80,7 @@ export async function playerRoutes(server: FastifyInstance) {
       available.push({
         platform: build.target_os,
         format: build.artifact_format,
+        extension: path.extname(build.artifact_path),
         version: build.version,
         bytes: Number(build.artifact_size),
         sha256: build.artifact_sha256,

@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { MinecraftInstance, LauncherBuild } from '../../types';
+import { useAuth } from '../../context/AuthContext';
+import { InstancePlayerServices } from './InstancePlayerServices';
 import { useToast } from '../../components/Toast';
 import { useTranslation } from '../../i18n';
 import { translateApiMessage } from '../../i18n/text';
@@ -35,13 +37,14 @@ interface InstanceLauncherTabProps {
 
 export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instance, onRefresh }) => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { tr, language } = useTranslation();
   const text = (fr: string, en: string) => language === 'fr' ? fr : en;
   const [loading, setLoading] = useState(false);
   const [building, setBuilding] = useState(false);
-  const [target, setTarget] = useState<'windows-installer' | 'windows' | 'linux' | 'macos' | 'all'>('windows-installer');
-  const targetOs = target === 'windows-installer' ? 'windows' : target;
-  const artifactFormat = target === 'windows-installer' ? 'installer' : 'zip';
+  const [targetOs, setTargetOs] = useState<'windows' | 'linux' | 'macos' | 'macos-arm64'>('windows');
+  const artifactFormat = 'native';
+  const packageLabels = { windows: 'MSI', linux: 'AppImage', macos: 'DMG Intel', 'macos-arm64': 'DMG Apple Silicon', all: 'ZIP' };
   const [builds, setBuilds] = useState<LauncherBuild[]>([]);
   const [historyError, setHistoryError] = useState('');
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -527,19 +530,18 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
 
             <div className="grid grid-cols-2 gap-2">
               {([
-                { id: 'windows-installer', label: text('Windows · Installateur (.exe)', 'Windows · Installer (.exe)') },
-                { id: 'windows', label: 'Windows · Portable (.zip)' },
-                { id: 'linux', label: 'Linux (.zip / .sh)' },
-                { id: 'macos', label: 'macOS (.zip)' },
-                { id: 'all', label: tr("Toutes les plateformes") }
+                { id: 'windows', label: 'Windows · MSI' },
+                { id: 'linux', label: 'Linux · AppImage' },
+                { id: 'macos-arm64', label: 'macOS · Apple Silicon' },
+                { id: 'macos', label: 'macOS · Intel' }
               ] as const).map(os => (
                 <button
                   key={os.id}
                   type="button"
-                  aria-pressed={target === os.id}
-                  onClick={() => setTarget(os.id)}
+                  aria-pressed={targetOs === os.id}
+                  onClick={() => setTargetOs(os.id)}
                   className={`p-2.5 rounded-lg border text-left text-xs transition ${
-                    target === os.id
+                    targetOs === os.id
                       ? 'border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/20 font-bold text-indigo-700 dark:text-indigo-300'
                       : 'border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-300'
                   }`}
@@ -563,13 +565,15 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>{artifactFormat === 'installer' ? text('Générer l’installateur Windows', 'Build Windows installer') : <>{tr("Générer le launcher (")}{targetOs.toUpperCase()})</>}</span>
+                  <span>{text('Générer', 'Build')} {packageLabels[targetOs]}</span>
                 </>
               )}
             </button>
           </div>
         </div>
       </div>
+
+      {user?.role === 'admin' && <InstancePlayerServices key={instance.id} instance={instance} onRefresh={onRefresh} />}
 
       <section className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-3">
         <h3 className="text-sm font-bold flex items-center gap-2"><Globe className="size-4 text-indigo-500" />
@@ -631,7 +635,7 @@ export const InstanceLauncherTab: React.FC<InstanceLauncherTabProps> = ({ instan
                     </td>
                     <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                        {b.target_os} · {b.artifact_format === 'installer' ? 'EXE' : 'ZIP'}
+                        {b.target_os} · {b.artifact_format === 'native' ? packageLabels[b.target_os] : b.artifact_format === 'installer' ? 'EXE' : 'ZIP'}
                       </span>
                     </td>
                     <td className="py-3 px-3" aria-live="polite">

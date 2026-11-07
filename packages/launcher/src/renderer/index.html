@@ -65,6 +65,8 @@
             <button id="play" disabled><svg><use href="#i-play"/></svg><span id="play-label" data-i18n="play">Jouer</span><svg class="play-arrow"><use href="#i-arrow"/></svg></button>
             <button id="stop" class="secondary" hidden><span class="stop-square"></span><span data-i18n="stop">Arrêter</span></button>
           </div>
+          <label id="share-game-logs" class="hint" hidden><input id="share-logs" type="checkbox" checked> <span data-i18n="shareLogs">Envoyer le diagnostic de fin de partie aux administrateurs</span></label>
+          <p class="hint" id="cloud-warning" role="status" hidden></p>
           <p id="device" hidden></p>
           <button id="troubleshoot" type="button" class="text-action" data-i18n="openDiagnostics" hidden>Ouvrir le journal</button>
           <p class="sync-note"><svg><use href="#i-check"/></svg><span data-i18n="syncNote">Votre jeu se met à jour automatiquement avant chaque lancement.</span></p>
@@ -107,6 +109,22 @@
           <div class="setting-card"><label for="jvm-args" class="setting-label" data-i18n="argumentsTitle">Arguments JVM supplémentaires</label><p class="hint" data-i18n="argumentsDescription">Ils s’ajoutent aux réglages de l’instance. La mémoire se règle ci-dessus.</p><textarea id="jvm-args" rows="2" maxlength="8192" placeholder="-Dfile.encoding=UTF-8" spellcheck="false"></textarea></div>
           <div class="settings-actions"><span id="settings-status" role="status"></span><button id="save-settings" type="submit"><svg><use href="#i-check"/></svg><span data-i18n="save">Enregistrer</span></button></div>
         </form>
+        <section id="cloud-backup" class="setting-card" aria-labelledby="backup-heading" hidden>
+          <h2 id="backup-heading" class="setting-label" data-i18n="backupTitle">Sauvegarde des options Minecraft</h2>
+          <p class="hint" data-i18n="backupDescription">Vos options sont chiffrées et sauvegardées à la fermeture du jeu. Gardez votre clé pour les retrouver sur un autre poste.</p>
+          <div class="log-actions">
+            <button id="backup-enable" type="button" class="secondary" data-i18n="backupEnable">Activer la sauvegarde</button>
+            <button id="backup-copy" type="button" class="secondary" data-i18n="backupCopy" hidden>Copier ma clé</button>
+          </div>
+          <form id="backup-restore">
+            <label for="backup-key" class="hint" data-i18n="backupRestoreHint">La clé restaure la sauvegarde et remplace les options locales au prochain lancement.</label>
+            <div class="log-actions">
+              <input id="backup-key" type="password" maxlength="100" autocomplete="off" required>
+              <button type="submit" class="secondary" data-i18n="backupRestore">Utiliser cette clé</button>
+            </div>
+          </form>
+          <p id="backup-status" class="hint" role="status"></p>
+        </section>
         <button id="open-folder" class="folder-card" type="button"><span class="folder-icon"><svg><use href="#i-folder"/></svg></span><span><strong data-i18n="filesTitle">Les fichiers de votre jeu</strong><small data-i18n="filesDescription">Mods, captures d’écran et sauvegardes : tout est ici.</small></span><svg class="folder-arrow"><use href="#i-arrow"/></svg></button>
         <details class="logs-card" id="logs-card">
           <summary><svg><use href="#i-terminal"/></svg><span data-i18n="logs">Journal du jeu</span><span class="summary-plus">+</span></summary>

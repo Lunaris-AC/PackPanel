@@ -10,6 +10,19 @@ Les joueurs téléchargent le launcher depuis la page de leur instance, choisiss
 
 **Périmètre validé : Windows x64, authentification offline.** Minecraft 1.21.1 a réellement démarré avec les cinq moteurs, y compris après une mise à jour du pack. Microsoft sera intégré plus tard. Les packages Linux/macOS peuvent être générés, mais leur démarrage sur ces plateformes reste à valider. Le [rapport de tests](docs/TEST_REPORT.md) précise les versions testées.
 
+
+La page joueur propose un MSI par utilisateur pour Windows x64, une AppImage
+pour Linux x64 et un DMG pour Mac Intel ou Apple Silicon. Ouvrez le DMG, puis
+glissez le launcher dans **Applications**. Sur Linux, rendez l’AppImage
+exécutable avant de l’ouvrir.
+
+Dans l’onglet **Launcher personnalisé**, un administrateur peut autoriser la
+sauvegarde chiffrée des options Minecraft. Le joueur l’active dans les
+paramètres du launcher, puis conserve sa clé de récupération pour l’utiliser
+sur un autre poste. Les diagnostics de fin de partie sont envoyés par défaut
+et consultables dans le même onglet du panneau. Le joueur peut décocher
+l’envoi sur l’écran **Jouer**.
+
 ## Installation
 
 Prévoyez un serveur Linux avec Docker Engine, le plugin Docker Compose, Bash, OpenSSL et curl. Exécutez les commandes avec les droits nécessaires pour Docker et le stockage. Le serveur n'a pas besoin de Node.js : Docker compile l'ensemble du projet.

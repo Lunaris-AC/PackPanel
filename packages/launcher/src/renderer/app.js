@@ -16,6 +16,13 @@ const translations = {
     packNew: 'Prêt à installer.', packCurrent: 'Version à jour.', packUpdate: 'Une mise à jour est disponible.',
     installedRelease: 'Installé {version}', availableRelease: 'Disponible {version}', copyAddress: 'Copier l’adresse du serveur',
     addressCopied: 'Adresse du serveur copiée.', openDiagnostics: 'Ouvrir le journal', copyLog: 'Copier le diagnostic',
+    shareLogs: 'Envoyer le diagnostic de fin de partie aux administrateurs',
+    backupTitle: 'Sauvegarde des options Minecraft', backupEnable: 'Activer la sauvegarde', backupCopy: 'Copier ma clé',
+    backupDescription: 'Vos options sont chiffrées et sauvegardées à la fermeture du jeu. Gardez votre clé pour les retrouver sur un autre poste.',
+    backupRestoreHint: 'La clé restaure la sauvegarde et remplace les options locales au prochain lancement.', backupRestore: 'Utiliser cette clé',
+    backupKeyCopied: 'Clé copiée. Gardez-la dans un endroit sûr.', backupRestored: 'La sauvegarde sera restaurée au prochain lancement.',
+    backupFailed: 'Sauvegarde indisponible ou clé invalide. Vérifiez la clé et réessayez.',
+    backupSyncFailed: 'Les options n’ont pas été synchronisées. Vérifiez votre connexion. Pour récupérer la copie distante, réimportez votre clé.',
     logPrivacy: 'Relisez le journal avant de le transmettre. Il peut contenir des messages de jeu.',
     logCopied: 'Diagnostic copié.', logEmpty: 'Aucun diagnostic disponible.',
     optionalTitle: 'Fichiers facultatifs', optionalHint: 'Vos choix s’appliqueront lors de la prochaine préparation ou du prochain lancement.',
@@ -47,6 +54,13 @@ const translations = {
     packNew: 'Ready to install.', packCurrent: 'Up to date.', packUpdate: 'An update is available.',
     installedRelease: 'Installed {version}', availableRelease: 'Available {version}', copyAddress: 'Copy server address',
     addressCopied: 'Server address copied.', openDiagnostics: 'Open game log', copyLog: 'Copy diagnostics',
+    shareLogs: 'Send end-of-session diagnostics to administrators',
+    backupTitle: 'Back up Minecraft options', backupEnable: 'Enable backup', backupCopy: 'Copy my recovery key',
+    backupDescription: 'Your options are encrypted and backed up when the game closes. Keep your key to recover them on another device.',
+    backupRestoreHint: 'The key restores your backup and replaces local options the next time you play.', backupRestore: 'Use this key',
+    backupKeyCopied: 'Key copied. Keep it somewhere safe.', backupRestored: 'Your backup will be restored the next time you play.',
+    backupFailed: 'Backup unavailable or invalid key. Check the key and try again.',
+    backupSyncFailed: 'Options could not be synced. Check your connection. To recover the cloud copy, import your key again.',
     logPrivacy: 'Review the log before sharing it. It can contain in-game messages.',
     logCopied: 'Diagnostics copied.', logEmpty: 'No diagnostics yet.',
     optionalTitle: 'Optional files', optionalHint: 'Your choices will take effect the next time you prepare or launch the pack.',
@@ -84,6 +98,10 @@ let logCopyStatus = '';
 let optionalFiles = [];
 let programUpdate = { state: 'idle' };
 let applyingProgramUpdate = false;
+let cloudSettings;
+let cloudBusy = false;
+let backupStatus = '';
+let backupWarning = false;
 const log = line => { el('logs').textContent = (el('logs').textContent + line + '\n').slice(-60000); el('logs').scrollTop = el('logs').scrollHeight; };
 function status(key, variables = {}, error = false) {
   statusKey = key; statusVariables = variables; statusError = error;
@@ -105,6 +123,7 @@ function updateButtons() {
   el('play-label').textContent = t(busy ? (progressEvent?.step === 'running' ? 'runningButton' : 'preparing') : 'play');
   renderPack();
   renderProgramUpdate();
+  renderCloud();
 }
 function renderProgramUpdate() {
   const { state, percent } = programUpdate;
@@ -223,7 +242,64 @@ function tab(showSettings) {
   el('home-tab').classList.toggle('selected', !showSettings); el('settings-tab').classList.toggle('selected', showSettings);
   el('home-tab').setAttribute('aria-pressed', String(!showSettings)); el('settings-tab').setAttribute('aria-pressed', String(showSettings));
 }
-el('home-tab').onclick = () => tab(false); el('settings-tab').onclick = () => tab(true);
+el('home-tab').onclick = () => tab(false);
+el('settings-tab').onclick = () => { tab(true); void refreshCloud(); };
+function renderCloud() {
+  el('share-game-logs').hidden = !cloudSettings?.available;
+  if (cloudSettings) el('share-logs').checked = cloudSettings.shareLogs;
+  el('cloud-backup').hidden = !cloudSettings?.backupEnabled;
+  el('backup-enable').hidden = !!cloudSettings?.backupActive;
+  el('backup-copy').hidden = !cloudSettings?.backupActive;
+  el('backup-enable').disabled = busy || cloudBusy;
+  el('backup-key').disabled = busy || cloudBusy;
+  el('backup-restore').querySelector('button').disabled = busy || cloudBusy;
+  el('backup-status').textContent = backupStatus ? t(backupStatus) : '';
+  el('cloud-warning').hidden = !backupWarning;
+  el('cloud-warning').textContent = backupWarning ? t('backupSyncFailed') : '';
+}
+async function refreshCloud() {
+  if (!config) return;
+  try { cloudSettings = await api.getCloudSettings(); renderCloud(); }
+  catch (error) { log(error.message); }
+}
+el('share-logs').onchange = event => {
+  const checkbox = event.currentTarget;
+  const enabled = checkbox.checked;
+  checkbox.disabled = true;
+  action(async () => {
+    try {
+      await api.setShareLogs(enabled);
+      cloudSettings.shareLogs = enabled;
+    } finally {
+      checkbox.disabled = false;
+      renderCloud();
+    }
+  });
+};
+async function changeBackup(key) {
+  cloudBusy = true;
+  backupStatus = '';
+  renderCloud();
+  try {
+    await api.configureBackup(key);
+    if (key !== undefined) {
+      el('backup-key').value = '';
+      backupStatus = 'backupRestored';
+    }
+    await refreshCloud();
+  } catch { backupStatus = 'backupFailed'; }
+  finally { cloudBusy = false; renderCloud(); }
+}
+el('backup-enable').onclick = () => changeBackup();
+el('backup-restore').onsubmit = event => {
+  event.preventDefault();
+  void changeBackup(el('backup-key').value);
+};
+el('backup-copy').onclick = () => action(async () => {
+  if (await api.copyBackupKey()) backupStatus = 'backupKeyCopied';
+  renderCloud();
+});
+api.onCloudIssue(() => { backupWarning = true; renderCloud(); });
 el('ram').oninput = updateMemory;
 el('ram-range').oninput = () => { el('ram').value = el('ram-range').value; updateMemory(); };
 el('settings-form').onsubmit = event => { event.preventDefault(); action(async () => { await api.saveSettings(values()); saved = true; el('settings-status').textContent = t('saved'); }); };
@@ -249,6 +325,7 @@ function beginWork() {
   busy = true;
   progressEvent = undefined;
   logCopyStatus = '';
+  backupWarning = false;
   el('logs').textContent = '';
   el('log-copy-status').textContent = '';
   el('progress').value = 0;
@@ -316,6 +393,7 @@ action(async () => {
   el('microsoft').hidden = !config.auth.microsoft; el('username-field').hidden = !config.auth.offline;
   if (!config.auth.offline) el('status-mode').hidden = true;
   for (const [id, url] of [['discord', config.branding.discordUrl], ['website', config.branding.websiteUrl]]) if (url && /^https?:\/\//.test(url)) { el(id).href = url; el(id).hidden = false; }
+  await refreshCloud();
   updateMemory(); updateButtons();
   void refreshPack();
   void api.checkProgramUpdate().then(setProgramUpdate).catch(() => setProgramUpdate({ state: 'failed' }));

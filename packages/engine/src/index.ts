@@ -43,6 +43,7 @@ interface EngineLaunchOptions extends PrepareOptions {
   customJvmArgs?: string[];
   windowWidth?: number;
   windowHeight?: number;
+  beforeLaunch?: () => Promise<void>;
 }
 
 export class MinecraftEngine extends EventEmitter {
@@ -155,12 +156,14 @@ export class MinecraftEngine extends EventEmitter {
 
     // 9. Launch Minecraft Process
     signal.throwIfAborted();
-    this.preparation = null;
     this.emit('packReady', manifest);
     if (!launch) {
       notify('prepared', 100, 'Les fichiers du jeu sont prêts.');
       return;
     }
+    await launch.beforeLaunch?.();
+    signal.throwIfAborted();
+    this.preparation = null;
     notify('launching', 98, 'Démarrage du processus Minecraft...');
     this.launcher.launch({
       javaPath: javaExec,
