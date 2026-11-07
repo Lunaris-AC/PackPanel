@@ -28,6 +28,7 @@ import { ExplorerPage } from '../ExplorerPage';
 import { VersionsPage } from '../VersionsPage';
 import { InstanceLauncherTab } from './InstanceLauncherTab';
 import { InstanceSettingsTab } from './InstanceSettingsTab';
+import { InstanceServerStatus } from './InstanceServerStatus';
 import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../../components/Modal';
 
@@ -113,6 +114,7 @@ export const InstanceDetailPage: React.FC = () => {
   const isPublished = Boolean(instance.active_release_id);
   const hasPendingChanges = Boolean(instance.draft_release_id || (instance.pendingChangesCount || 0) > 0 || instance.hasDraftConfigChanges);
   const canPublish = instance.permissions?.can_publish ?? (user?.role === 'admin' || user?.role === 'operator');
+  const canTestServer = instance.permissions?.can_write ?? user?.role === 'admin';
 
   return (
     <div className="space-y-6">
@@ -270,6 +272,10 @@ export const InstanceDetailPage: React.FC = () => {
               </p>
             </div>
           </div>
+
+          {canTestServer && instance.server_address?.trim() && (
+            <InstanceServerStatus key={`${instance.id}:${instance.server_address}`} id={instance.id} address={instance.server_address} />
+          )}
 
           {/* Distribution Manifest Card */}
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-xs space-y-4">

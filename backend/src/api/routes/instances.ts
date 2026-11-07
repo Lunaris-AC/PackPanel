@@ -14,6 +14,7 @@ import { storeBufferInCas, getCasObjectPath } from '../../storage/cas';
 import { hashBuffer } from '../../storage/hasher';
 import { isPublicPackPath, sanitizeRelativePath } from '../../storage/paths';
 import { launcherArchivePath, sendLauncherArchive } from './player';
+import { probeMinecraftStatus } from '../minecraft-status';
 
 const InstanceCreateSchema = z.object({
   name: z.string().min(1).max(128),
@@ -71,6 +72,8 @@ function imageMime(buffer: Buffer) {
 }
 
 export async function instanceRoutes(fastify: FastifyInstance) {
+  const activeServerProbes = new Set<string>();
+
   // Public media download route
   fastify.get('/media/:sha256', async (req, reply) => {
     const { sha256 } = req.params as { sha256: string };
@@ -94,6 +97,36 @@ export async function instanceRoutes(fastify: FastifyInstance) {
       .header('Content-Security-Policy', "sandbox; default-src 'none'")
       .header('Cache-Control', 'public, max-age=31536000, immutable')
       .send(buf);
+  });
+
+  fastify.post('/instances/:id/server-status', {
+    preHandler: [authenticateRequest, requireRole(['admin', 'operator'])]
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { rows } = await query(
+      `SELECT i.server_address FROM instances i WHERE i.id::text = $1
+       AND ($2::boolean OR EXISTS (
+         SELECT 1 FROM user_endpoint_permissions p
+         WHERE p.user_id = $3 AND p.endpoint_id = i.endpoint_id AND p.can_write
+       ))`,
+      [id, req.user!.role === 'admin', req.user!.userId]
+    );
+    const instance = rows[0];
+    if (!instance) return reply.status(404).send({ error: 'Instance introuvable' });
+    const address = instance.server_address as string | null;
+    if (!address?.trim()) return reply.send({ address, status: 'invalid_address' });
+
+    if (activeServerProbes.has(id) || activeServerProbes.size >= 8) {
+      return reply.header('Retry-After', '5').status(429).send({ status: 'busy' });
+    }
+
+    activeServerProbes.add(id);
+    try {
+      const result = await probeMinecraftStatus(address);
+      return reply.send({ ...result, address, checkedAt: new Date().toISOString() });
+    } finally {
+      activeServerProbes.delete(id);
+    }
   });
 
   // Authenticated routes
