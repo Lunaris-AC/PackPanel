@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR } from '../../config';
 import { query } from '../../db';
+import { launcherBranding } from '../../build/launcher-branding';
 
 interface Archive {
   artifact_path: string | null;
@@ -63,6 +64,24 @@ const sharedBuilds = `
 export async function playerRoutes(server: FastifyInstance) {
   server.addHook('onRequest', async (_req, reply) => {
     reply.header('Cache-Control', 'no-store').header('X-Robots-Tag', 'noindex');
+  });
+
+  server.get<{ Params: { slug: string } }>('/play/:slug/launcher', async (req, reply) => {
+    const { rows: [project] } = await query(
+      `SELECT i.id AS instance_id, i.name AS instance_name, p.id AS launcher_id, p.title, p.accent_color,
+              p.background_url, p.logo_url, p.icon_url, p.discord_url, p.website_url
+       FROM instances i JOIN launcher_projects p ON p.id = i.launcher_project_id
+       WHERE i.slug = $1 AND i.launcher_enabled
+         AND EXISTS (SELECT 1 FROM releases r WHERE r.endpoint_id = i.endpoint_id AND r.is_active)`,
+      [req.params.slug]
+    );
+    if (!project) return reply.status(404).send({ error: 'Launcher indisponible' });
+    return {
+      launcherId: project.launcher_id,
+      instanceId: project.instance_id,
+      instanceName: project.instance_name,
+      branding: launcherBranding(project)
+    };
   });
 
   server.get<{ Params: { slug: string } }>('/play/:slug', async (req, reply) => {

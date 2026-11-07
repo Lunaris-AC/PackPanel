@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { z } from 'zod';
-import { AuthProfile, InstanceManifestV2, LauncherConfigV2, LauncherConfigV2Schema } from '@packpanel/protocol';
+import { AuthProfile, InstanceManifestV2, LauncherConfigV2, LauncherConfigV2Schema, LauncherPresentationSchema } from '@packpanel/protocol';
 import {
   MinecraftEngine,
   createOfflineProfile,
@@ -45,8 +45,7 @@ function readSettings() {
     return { ...settings, ramMb: Math.min(settings.ramMb, maximumMemoryMb) };
   } catch { return { ramMb: Math.min(4096, maximumMemoryMb), customJvmArgs: '' }; }
 }
-function configuredInstance() {
-  const config = loadLauncherConfig();
+function configuredInstance(config = loadLauncherConfig()) {
   const instance = config.instances.find(instance => instance.isDefault) || config.instances[0];
   if (!instance || !/^[a-z0-9_-]+$/.test(instance.slug)) throw new Error('Instance du launcher absente ou invalide.');
   return instance;
@@ -245,7 +244,38 @@ ipcMain.handle('launcher:windowControl', (event, action: unknown) => {
 });
 
 ipcMain.handle('launcher:getConfig', async () => {
-  return loadLauncherConfig();
+  const config = loadLauncherConfig();
+  const instance = configuredInstance(config);
+  function parsePresentation(data: unknown) {
+    const presentation = LauncherPresentationSchema.safeParse(data);
+    return presentation.success && presentation.data.launcherId === config.launcherId &&
+      presentation.data.instanceId === instance.id ? presentation.data : null;
+  }
+
+  let presentation = null;
+  try {
+    const url = new URL(`/play-api/${encodeURIComponent(instance.slug)}/launcher`, instance.manifestUrl);
+    if (url.protocol === 'https:' || url.protocol === 'http:') {
+      const response = await fetch(url, { cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(3500) });
+      if (response.ok) presentation = parsePresentation(await response.json());
+    }
+  } catch { /* The embedded or last fetched presentation is usable offline. */ }
+  if (presentation) {
+    try { writePlayerFile('launcher-presentation.json', JSON.stringify(presentation)); }
+    catch { /* A cache write failure does not affect the current window. */ }
+  } else {
+    try { presentation = parsePresentation(JSON.parse(readPlayerFile('launcher-presentation.json'))); }
+    catch { /* There may be no cached presentation yet. */ }
+  }
+  if (!presentation) return config;
+
+  return {
+    ...config,
+    branding: presentation.branding,
+    instances: config.instances.map(item => item.id === instance.id
+      ? { ...item, name: presentation.instanceName }
+      : item)
+  };
 });
 ipcMain.handle('launcher:getSettings', async () => ({ ...readSettings(), gameDirectory: instanceDirectory(), maximumMemoryMb }));
 ipcMain.handle('launcher:saveSettings', async (_event: any, settings: unknown) => {

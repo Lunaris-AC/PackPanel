@@ -110,6 +110,13 @@ export const LauncherBrandingSchema = z.object({
   websiteUrl: z.string().url().optional()
 });
 
+export const LauncherPresentationSchema = z.object({
+  launcherId: z.string().uuid(),
+  instanceId: z.string().uuid(),
+  instanceName: z.string().min(1).max(128),
+  branding: LauncherBrandingSchema
+});
+
 export interface LauncherConfigV2 {
   formatVersion: 2;
   launcherId: string;

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { query, withTransaction } from '../../db';
 import { authenticateRequest, canManageLauncherInstances, requireRole, recordAuditLog } from '../../auth/middleware';
 import { config, getFilesBaseUrl } from '../../config';
+import { launcherBranding } from '../../build/launcher-branding';
 
 const LauncherCreateSchema = z.object({
   name: z.string().min(1).max(128),
@@ -253,15 +254,7 @@ export async function launcherRoutes(fastify: FastifyInstance) {
       name: launcher.name,
       slug: launcher.slug,
       template: launcher.template,
-      branding: {
-        title: launcher.title,
-        accentColor: launcher.accent_color,
-        backgroundUrl: launcher.background_url || undefined,
-        logoUrl: launcher.logo_url || undefined,
-        iconUrl: launcher.icon_url || undefined,
-        discordUrl: launcher.discord_url || undefined,
-        websiteUrl: launcher.website_url || undefined
-      },
+      branding: launcherBranding(launcher),
       auth: {
         microsoft: launcher.auth_microsoft,
         offline: launcher.auth_offline

@@ -116,7 +116,7 @@ function renderProgress(event) {
   else status(event.step === 'idle' ? 'cancelling' : event.step in translations.en ? event.step : 'preparing');
 }
 function updateButtons() {
-  el('play').disabled = !config || !settings || busy || applyingProgramUpdate || (!config.auth.offline && !microsoftProfile);
+  el('play').disabled = !config || !settings || busy || checkingPack || applyingProgramUpdate || (!config.auth.offline && !microsoftProfile);
   el('username').disabled = busy; el('stop').hidden = !busy; document.body.dataset.busy = String(busy);
   el('stop').disabled = stopping;
   el('stop').lastElementChild.textContent = t(progressEvent?.step === 'running' ? 'stop' : 'cancel');
@@ -182,10 +182,10 @@ function renderOptionalFiles() {
     return label;
   }));
 }
-async function refreshPack() {
+async function refreshPack(autoUpdate = false) {
   if (checkingPack) return;
   checkingPack = true;
-  renderPack();
+  updateButtons();
   try {
     const result = await api.getPackStatus();
     packStatus = result;
@@ -195,7 +195,11 @@ async function refreshPack() {
     packStatus.latest = null;
   } finally {
     checkingPack = false;
-    renderPack();
+    updateButtons();
+  }
+  const { installed, latest } = packStatus;
+  if (autoUpdate && installed && latest?.releaseId && releaseKey(installed) !== latest.releaseId && !busy && !applyingProgramUpdate) {
+    await action(preparePack);
   }
 }
 function updateMemory() {
@@ -313,7 +317,7 @@ el('copy-log').onclick = () => action(async () => {
   logCopyStatus = await api.copyDiagnostics() ? 'logCopied' : 'logEmpty';
   el('log-copy-status').textContent = t(logCopyStatus);
 });
-el('check-pack').onclick = refreshPack;
+el('check-pack').onclick = () => void refreshPack();
 el('copy-server').onclick = () => action(async () => {
   const address = (packStatus.latest || packStatus.installed)?.serverAddress;
   if (address) {
@@ -340,11 +344,12 @@ function endWork() {
   el('progress-area').hidden = true;
   updateButtons();
 }
-el('prepare-pack').onclick = () => action(async () => {
+async function preparePack() {
   beginWork();
   try { await api.prepareInstance(); }
   finally { endWork(); }
-});
+}
+el('prepare-pack').onclick = () => action(preparePack);
 el('username').value = localStorage.getItem('packpanel_username') || '';
 el('username').onkeydown = event => { if (event.key === 'Enter' && !el('play').disabled) el('play').click(); };
 el('microsoft').onclick = () => action(async () => {
@@ -370,7 +375,7 @@ el('stop').onclick = () => action(async () => {
 });
 api.onProgress(event => {
   progressEvent = event; renderProgress(event);
-  if (event.step === 'stopped' || event.step === 'prepared') endWork();
+  if (event.step === 'stopped') endWork();
   else updateButtons();
 });
 api.onPackReady(pack => { packStatus = { installed: pack, latest: pack }; renderPack(); });
@@ -394,8 +399,8 @@ action(async () => {
   if (!config.auth.offline) el('status-mode').hidden = true;
   for (const [id, url] of [['discord', config.branding.discordUrl], ['website', config.branding.websiteUrl]]) if (url && /^https?:\/\//.test(url)) { el(id).href = url; el(id).hidden = false; }
   await refreshCloud();
-  updateMemory(); updateButtons();
-  void refreshPack();
-  void api.checkProgramUpdate().then(setProgramUpdate).catch(() => setProgramUpdate({ state: 'failed' }));
   el('logs').textContent = await api.getLastLog();
+  updateMemory(); updateButtons();
+  void refreshPack(true);
+  void api.checkProgramUpdate().then(setProgramUpdate).catch(() => setProgramUpdate({ state: 'failed' }));
 });

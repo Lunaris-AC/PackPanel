@@ -9,6 +9,7 @@ import { JobQueue } from '../jobs/queue';
 import { buildWindowsInstaller } from './windows-installer';
 import { buildPlayerPackage, playerExtensions } from './player-package';
 import { runtimeForInstaller } from './runtime-release';
+import { launcherBranding } from './launcher-branding';
 
 function createZipArchive(options: any) {
   const archiverModule = require('archiver');
@@ -103,15 +104,7 @@ export async function buildLauncherArtifact(buildId: string, instanceId: string)
       name: proj.name,
       slug: proj.slug,
       template: proj.template,
-      branding: {
-        title: proj.title,
-        accentColor: proj.accent_color,
-        backgroundUrl: proj.background_url || undefined,
-        logoUrl: proj.logo_url || undefined,
-        iconUrl: proj.icon_url || undefined,
-        discordUrl: proj.discord_url || undefined,
-        websiteUrl: proj.website_url || undefined
-      },
+      branding: launcherBranding(proj),
       auth: {
         microsoft: proj.auth_microsoft,
         offline: proj.auth_offline
