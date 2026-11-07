@@ -5,11 +5,11 @@ import { text } from 'node:stream/consumers';
 import { openPromise } from 'yauzl';
 import { downloadArtifact } from '@electron/get';
 import { config, DATA_DIR } from '../config';
-import type { LauncherRuntime } from '@packpanel/protocol/launcher-update';
+import type { LauncherRuntime, NativeLauncherRuntime } from '@packpanel/protocol/launcher-update';
 
 export const ELECTRON_VERSION = '44.10.2';
 
-export async function appendDesktopRuntime(archive: any, target: 'windows' | 'linux' | 'macos', launcherConfig: unknown, signal: AbortSignal, runtime?: LauncherRuntime, arch: 'x64' | 'arm64' = 'x64'): Promise<void> {
+export async function appendDesktopRuntime(archive: any, target: 'windows' | 'linux' | 'macos', launcherConfig: unknown, signal: AbortSignal, runtime?: LauncherRuntime | NativeLauncherRuntime, arch: 'x64' | 'arm64' = 'x64'): Promise<void> {
   const platform = target === 'windows' ? 'win32' : target === 'macos' ? 'darwin' : 'linux';
   const runtimeZip = await downloadArtifact({
     version: ELECTRON_VERSION, artifactName: 'electron', platform, arch,

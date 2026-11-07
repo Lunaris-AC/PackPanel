@@ -7,7 +7,7 @@ import { pipeline } from 'stream/promises';
 import { Server as TusServer } from '@tus/server';
 import { FileStore } from '@tus/file-store';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, requireRole, requireEndpointPermission, recordAuditLog } from '../../auth/middleware';
+import { authenticateRequest, mayPublishEndpoint, requireRole, requireEndpointPermission, recordAuditLog } from '../../auth/middleware';
 import { config, STAGING_DIR } from '../../config';
 import { enqueueJob } from '../../jobs/queue';
 import { assertSanitizedRelativePath } from '../../storage/paths';
@@ -16,16 +16,6 @@ import { assertSanitizedRelativePath } from '../../storage/paths';
 const tusUploadDir = path.join(STAGING_DIR, 'tus_chunks');
 if (!fs.existsSync(tusUploadDir)) {
   fs.mkdirSync(tusUploadDir, { recursive: true, mode: 0o750 });
-}
-
-async function mayPublishUpload(userId: string | null, endpointId: string): Promise<boolean> {
-  if (!userId) return false;
-  const result = await query(
-    `SELECT u.role = 'admin' OR p.can_publish IS TRUE AS allowed FROM users u
-     LEFT JOIN user_endpoint_permissions p ON p.user_id = u.id AND p.endpoint_id = $2
-     WHERE u.id = $1`, [userId, endpointId]
-  );
-  return result.rows[0]?.allowed === true;
 }
 
 export const tusServer = new TusServer({
@@ -81,7 +71,7 @@ export const tusServer = new TusServer({
           endpointId,
           zipPath: destZipPath,
           mode: session.mode,
-          immediatePublish: await mayPublishUpload(session.user_id, endpointId) ? undefined : false
+          immediatePublish: await mayPublishEndpoint(session.user_id, endpointId) ? undefined : false
         }, 5);
 
         await query(
@@ -417,7 +407,7 @@ export async function uploadRoutes(fastify: FastifyInstance) {
     preHandler: [requireRole(['admin', 'operator']), requireEndpointPermission('can_write')]
   }, async (req: FastifyRequest, reply: FastifyReply) => {
     const { id: endpointId } = req.params as { id: string };
-    const { draft } = req.query as { draft?: string };
+    const { draft, autoPublish } = req.query as { draft?: string; autoPublish?: string };
 
     if (!req.isMultipart()) {
       return reply.status(400).send({ error: 'Requête multipart/form-data requise' });
@@ -466,7 +456,8 @@ export async function uploadRoutes(fastify: FastifyInstance) {
       endpointId,
       zipPath: zipFilePath,
       mode,
-      immediatePublish: draft !== 'true' && await mayPublishUpload(req.user!.userId, endpointId) ? undefined : false
+      immediatePublish: (draft !== 'true' || autoPublish === 'true') && await mayPublishEndpoint(req.user!.userId, endpointId)
+        ? undefined : false
     }, 5);
 
     await recordAuditLog(req.user!.userId, 'upload_zip', 'endpoint', endpointId, { sessionId, jobId: job.id, mode }, req.ip);

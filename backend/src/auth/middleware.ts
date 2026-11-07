@@ -121,6 +121,16 @@ export function requireEndpointPermission(permission: 'can_write' | 'can_publish
   };
 }
 
+export async function mayPublishEndpoint(userId: string | null, endpointId: string): Promise<boolean> {
+  if (!userId) return false;
+  const result = await query(
+    `SELECT u.role = 'admin' OR (u.role = 'operator' AND p.can_publish IS TRUE) AS allowed FROM users u
+     LEFT JOIN user_endpoint_permissions p ON p.user_id = u.id AND p.endpoint_id = $2
+     WHERE u.id = $1`, [userId, endpointId]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
 export function requireInstancePermission(permission: 'can_write' | 'can_publish') {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     if (req.user?.role === 'admin') return;

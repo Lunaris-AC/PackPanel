@@ -157,6 +157,11 @@ export const InstanceDetailPage: React.FC = () => {
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
                   {tr("Brouillon non publié")} </span>
               )}
+              {instance.endpoint_auto_publish && (
+                <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400">
+                  {text('Publication automatique', 'Automatic publishing')}
+                </span>
+              )}
             </div>
 
             <p className="text-xs text-zinc-500 font-mono">
@@ -349,7 +354,8 @@ export const InstanceDetailPage: React.FC = () => {
 
       {/* Tab 2: Embedded Files Explorer */}
       {subTab === 'files' && instance.endpoint_id && (
-        <ExplorerPage endpointId={instance.endpoint_id} onDraftChange={loadInstance} canWrite={instance.permissions?.can_write} />
+        <ExplorerPage endpointId={instance.endpoint_id} onDraftChange={loadInstance} canWrite={instance.permissions?.can_write}
+          autoPublishEnabled={instance.endpoint_auto_publish && canPublish} />
       )}
 
       {/* Tab 3: Embedded Publications & Rollback */}

@@ -160,6 +160,7 @@ export interface MinecraftInstance {
   endpoint_id?: string;
   endpoint_slug?: string;
   endpoint_name?: string;
+  endpoint_auto_publish?: boolean;
   player_options_backup?: boolean;
   launcher_enabled?: boolean;
   launcher_project_id?: string;

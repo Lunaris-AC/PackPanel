@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DATA_DIR } from '../../config';
 import { query } from '../../db';
 import { launcherBranding } from '../../build/launcher-branding';
+import { NativeLauncherPlatformSchema } from '@packpanel/protocol/launcher-update';
 
 interface Archive {
   artifact_path: string | null;
@@ -82,6 +83,23 @@ export async function playerRoutes(server: FastifyInstance) {
       instanceName: project.instance_name,
       branding: launcherBranding(project)
     };
+  });
+
+  server.get<{ Params: { slug: string; platform: string } }>('/play/:slug/updates/:platform', async (req, reply) => {
+    const { slug, platform } = req.params;
+    if (!NativeLauncherPlatformSchema.safeParse(platform).success) return reply.status(404).send();
+    const { rows: [build] } = await query(
+      `SELECT b.artifact_path ${sharedBuilds} AND b.target_os = $2 AND b.artifact_format = 'native'
+       ORDER BY b.shared_at DESC, b.id DESC LIMIT 1`, [slug, platform]
+    );
+    const artifact = build && await launcherArchivePath(build.artifact_path);
+    if (!artifact) return reply.status(404).send();
+    const envelope = await fs.promises.readFile(artifact.file + '.update.json', 'utf8').catch(error => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!envelope) return reply.status(404).send();
+    return reply.type('application/json').send(envelope);
   });
 
   server.get<{ Params: { slug: string } }>('/play/:slug', async (req, reply) => {

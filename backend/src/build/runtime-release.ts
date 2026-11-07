@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
-import { LauncherRuntimeSchema, launcherUpdatePublicKey, signLauncherRuntime, verifyLauncherRuntime } from '@packpanel/protocol/launcher-update';
+import { LauncherRuntimeSchema, launcherUpdatePublicKey, NativeLauncherRuntimeSchema, signLauncherRuntime, signNativeLauncher, verifyLauncherRuntime, type NativeLauncherRelease, type NativeLauncherRuntime } from '@packpanel/protocol/launcher-update';
 import { DATA_DIR, getFilesBaseUrl } from '../config';
 import { hashFile } from '../storage/hasher';
 import { appendDesktopRuntime } from './desktop-package';
@@ -12,6 +12,17 @@ const feedFile = path.join(updateDir, 'windows-x64.json');
 const pendingFile = path.join(updateDir, 'windows-x64.pending.json');
 const keyFile = process.env.PACKPANEL_LAUNCHER_KEY_FILE || '/run/packpanel-signing/launcher.pem';
 const expiry = () => Date.now() + 90 * 24 * 60 * 60 * 1000;
+
+export async function nativeRuntimeForInstaller(platform: NativeLauncherRuntime['platform'], version: string) {
+  if (!process.env.PACKPANEL_BUILD_REVISION) return;
+  const publicKey = launcherUpdatePublicKey(await fs.promises.readFile(keyFile, 'utf8'));
+  return NativeLauncherRuntimeSchema.parse({ platform, sequence: Number(version.split('.')[2]), publicKey });
+}
+
+export async function writeNativeUpdateMetadata(artifact: string, release: NativeLauncherRelease) {
+  const key = await fs.promises.readFile(keyFile, 'utf8');
+  await fs.promises.writeFile(artifact + '.update.json', JSON.stringify(signNativeLauncher(release, key)), { mode: 0o644 });
+}
 
 export async function runtimeForInstaller() {
   const revision = process.env.PACKPANEL_BUILD_REVISION;

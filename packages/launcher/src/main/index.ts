@@ -16,6 +16,7 @@ import {
 import { PlayerCloud } from './player-cloud';
 import { packSummarySchema, redactDiagnostics, summarizePack } from './player-state';
 import { downloadLauncherUpgrade, installLauncherUpgrade, installedWindowsRoot, type LauncherUpdateState } from './launcher-updater';
+import { confirmNativeUpgrade, downloadNativeUpgrade, installNativeUpgrade } from './native-upgrade';
 
 let mainWindow: BrowserWindow | null = null;
 let currentProfile: AuthProfile | null = null;
@@ -35,6 +36,7 @@ let upgrading = false;
 let configuringBackup = false;
 let quitAfterGame = false;
 let preparedUpgrade: Awaited<ReturnType<typeof downloadLauncherUpgrade>>;
+let preparedNativeUpgrade: Awaited<ReturnType<typeof downloadNativeUpgrade>>;
 let updateCheck: Promise<LauncherUpdateState> | undefined;
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
 const settingsSchema = z.object({ ramMb: z.number().int().min(1024).max(65536), customJvmArgs: z.string().max(8192).default('') });
@@ -177,6 +179,11 @@ function createWindow() {
     }
   });
   mainWindow.once('ready-to-show', () => {
+    const nativeToken = app.commandLine.getSwitchValue('packpanel-native-health');
+    if (nativeToken) {
+      try { confirmNativeUpgrade(playerDirectory(), nativeToken); }
+      catch (error) { console.error(error); app.exit(1); return; }
+    }
     const token = app.commandLine.getSwitchValue('packpanel-update-health');
     if (token) {
       try {
@@ -444,28 +451,39 @@ ipcMain.handle('launcher:stopInstance', async () => {
 });
 
 ipcMain.handle('launcher:checkProgramUpdate', async (): Promise<LauncherUpdateState> => {
-  if (preparedUpgrade) return { state: 'ready' };
+  if (preparedUpgrade || preparedNativeUpgrade) return { state: 'ready' };
   if (updateCheck) return updateCheck;
-  const root = installedWindowsRoot(configuredInstance().id, process.execPath);
-  if (!root || !fs.existsSync(path.join(root, 'app', 'resources', 'app', 'launcher-runtime.json'))) return { state: 'idle' };
-  updateCheck = downloadLauncherUpgrade(root, state => mainWindow?.webContents.send('launcher:programUpdate', state))
-    .then(update => {
-      preparedUpgrade = update;
-      return { state: update ? 'ready' : 'idle' } as const;
-    })
+  const instance = configuredInstance();
+  const report = (state: LauncherUpdateState) => mainWindow?.webContents.send('launcher:programUpdate', state);
+  updateCheck = (async () => {
+    if (process.platform === 'win32') {
+      const root = installedWindowsRoot(instance.id, process.execPath);
+      if (root && fs.existsSync(path.join(root, 'app', 'resources', 'app', 'launcher-runtime.json'))) {
+        preparedUpgrade = await downloadLauncherUpgrade(root, report);
+      }
+    } else {
+      preparedNativeUpgrade = await downloadNativeUpgrade(app.getAppPath(), playerDirectory(), instance, report);
+    }
+    return { state: preparedUpgrade || preparedNativeUpgrade ? 'ready' : 'idle' } as const;
+  })()
     .catch(error => { recordLog(`Launcher update: ${error.message}`); return { state: 'failed' } as const; })
     .finally(() => { updateCheck = undefined; });
   return updateCheck;
 });
 
 ipcMain.handle('launcher:applyProgramUpdate', async () => {
-  if (launchInProgress || upgrading || !preparedUpgrade) throw new Error('Fermez Minecraft avant de mettre à jour le launcher.');
-  const instanceId = configuredInstance().id;
-  const root = installedWindowsRoot(instanceId, process.execPath);
-  if (!root) throw new Error('Installation Windows introuvable.');
+  if (launchInProgress || upgrading || (!preparedUpgrade && !preparedNativeUpgrade)) throw new Error('Fermez Minecraft avant de mettre à jour le launcher.');
   upgrading = true;
   try {
-    await installLauncherUpgrade(root, instanceId, customUserData ? app.getPath('userData') : '', preparedUpgrade);
+    const userData = customUserData ? app.getPath('userData') : '';
+    if (preparedNativeUpgrade) {
+      await installNativeUpgrade(preparedNativeUpgrade, playerDirectory(), userData);
+    } else {
+      const instanceId = configuredInstance().id;
+      const root = installedWindowsRoot(instanceId, process.execPath);
+      if (!root || !preparedUpgrade) throw new Error('Installation Windows introuvable.');
+      await installLauncherUpgrade(root, instanceId, userData, preparedUpgrade);
+    }
     app.quit();
   } catch (error) {
     upgrading = false;

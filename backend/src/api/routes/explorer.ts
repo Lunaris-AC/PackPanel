@@ -3,7 +3,7 @@ import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, requireRole, requireEndpointPermission, recordAuditLog } from '../../auth/middleware';
+import { authenticateRequest, mayPublishEndpoint, requireRole, requireEndpointPermission, recordAuditLog } from '../../auth/middleware';
 import { config, STAGING_DIR } from '../../config';
 import { getCasObjectPath, storeBufferInCas, linkObjectToRelease } from '../../storage/cas';
 import { hashBuffer } from '../../storage/hasher';
@@ -30,6 +30,12 @@ const requireWrite = requireEndpointPermission('can_write');
 const requirePublish = requireEndpointPermission('can_publish');
 function requireExplorerPermission(req: FastifyRequest, reply: FastifyReply) {
   return ((req.query as { draft?: string }).draft === 'true' ? requireWrite : requirePublish)(req, reply);
+}
+
+async function explorerPublication(req: FastifyRequest, endpointId: string, outsideDraft?: boolean) {
+  const { draft, autoPublish } = req.query as { draft?: string; autoPublish?: string };
+  if (draft !== 'true') return outsideDraft;
+  return autoPublish === 'true' && await mayPublishEndpoint(req.user!.userId, endpointId) ? undefined : false;
 }
 
 export async function explorerRoutes(fastify: FastifyInstance) {
@@ -328,7 +334,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     );
 
     if (commitNow || draft === 'true') {
-      await handleSealAndBuildRelease({ sessionId, immediatePublish: draft !== 'true' });
+      const { published } = await handleSealAndBuildRelease({ sessionId, immediatePublish: await explorerPublication(req, endpointId, true) });
       
       // Record history entry
       const action = existingFile ? 'edit' : 'create';
@@ -356,11 +362,11 @@ export async function explorerRoutes(fastify: FastifyInstance) {
         path: sanitizedPath,
         sha1,
         sha256,
-        committed: draft !== 'true'
+        committed: published
       }, req.ip);
-      return reply.send({ success: true, message: draft === 'true'
-        ? 'Fichier enregistré dans le brouillon.'
-        : 'Fichier enregistré et nouvelle version publiée avec succès' });
+      return reply.send({ success: true, published, message: published
+        ? 'Fichier enregistré et nouvelle version publiée avec succès'
+        : 'Fichier enregistré dans le brouillon.' });
     }
 
     await recordAuditLog(req.user!.userId, 'edit_file', 'endpoint', endpointId, {
@@ -475,7 +481,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       );
     }
 
-    await handleSealAndBuildRelease({ sessionId, immediatePublish: draft === 'true' ? false : undefined });
+    const { published } = await handleSealAndBuildRelease({ sessionId, immediatePublish: await explorerPublication(req, endpointId) });
 
     await recordAuditLog(req.user!.userId, 'upload_batch', 'endpoint', endpointId, {
       fileCount: files.length
@@ -484,7 +490,8 @@ export async function explorerRoutes(fastify: FastifyInstance) {
     return reply.send({
       success: true,
       count: files.length,
-      message: draft === 'true' || !epRes.rows[0].auto_publish
+      published,
+      message: !published
         ? `${files.length} fichier(s) ajoutés au brouillon.`
         : `${files.length} fichier(s) téléversé(s) et nouvelle version publiée avec succès`
     });
@@ -550,7 +557,10 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       );
     }
 
-    await handleSealAndBuildRelease({ sessionId, allowEmptySnapshot: true, immediatePublish: draft === 'true' ? false : undefined });
+    const { published } = await handleSealAndBuildRelease({
+      sessionId, allowEmptySnapshot: true, immediatePublish: await explorerPublication(req, endpointId),
+      expectedBaseReleaseId: draft === 'true' ? activeRelease.id : undefined
+    });
 
     for (const deletedFile of removed.filter(file => !file.is_dir)) {
       await query(
@@ -575,7 +585,7 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       remainingCount: remainingFiles.length
     }, req.ip);
 
-    return reply.send({ success: true, message: draft === 'true'
+    return reply.send({ success: true, published, message: draft === 'true' && !published
       ? 'Suppression enregistrée dans le brouillon.'
       : 'Élément supprimé et nouvelle version préparée' });
   });
@@ -687,7 +697,10 @@ export async function explorerRoutes(fastify: FastifyInstance) {
       );
     }
 
-    await handleSealAndBuildRelease({ sessionId, allowEmptySnapshot: true, immediatePublish: draft === 'true' ? false : undefined });
+    const { published } = await handleSealAndBuildRelease({
+      sessionId, allowEmptySnapshot: true, immediatePublish: await explorerPublication(req, endpointId),
+      expectedBaseReleaseId: draft === 'true' ? base.id : undefined
+    });
 
     await query(
       `INSERT INTO file_history (
@@ -716,7 +729,8 @@ export async function explorerRoutes(fastify: FastifyInstance) {
 
     return reply.send({
       success: true,
-      message: draft === 'true' ? 'Annulation enregistrée dans le brouillon.'
+      published,
+      message: draft === 'true' && !published ? 'Annulation enregistrée dans le brouillon.'
         : `Modification annulée pour "${record.relative_path}". Nouvelle version préparée.`
     });
   });

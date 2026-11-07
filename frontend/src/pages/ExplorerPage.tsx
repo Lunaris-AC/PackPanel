@@ -36,11 +36,12 @@ interface ExplorerPageProps {
   endpointId: string;
   onDraftChange?: () => void;
   canWrite?: boolean;
+  autoPublishEnabled?: boolean;
 }
 
 
 
-export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftChange, canWrite }) => {
+export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftChange, canWrite, autoPublishEnabled }) => {
   const { tr, language } = useTranslation();
   const text = (fr: string, en: string) => language === 'fr' ? fr : en;
   const { user } = useAuth();
@@ -48,6 +49,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftC
   const canEdit = canWrite ?? (user?.role === 'admin' || user?.role === 'operator');
   const draft = Boolean(onDraftChange);
   const draftQuery = draft ? '?draft=true' : '';
+  const autoDraftQuery = draft ? '?draft=true&autoPublish=true' : '';
 
   const [currentPrefix, setCurrentPrefix] = useState<string>('');
   const [search, setSearch] = useState<string>('');
@@ -170,6 +172,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftC
     setIsUploading(true);
     setUploadStatusText(tr("Préparation de {0} fichier(s)...", { 0: fileList.length }));
 
+    let published = false;
     try {
       let index = 0;
       while (index < fileList.length) {
@@ -188,12 +191,13 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftC
         }
         setUploadStatusText(tr("Téléversement des fichiers ({0}/{1})...", { 0: index, 1: fileList.length }));
 
-        await api.post(`/endpoints/${endpointId}/explorer/upload-batch${draftQuery}`, {
+        const result = await api.post<{ published: boolean }>(`/endpoints/${endpointId}/explorer/upload-batch${index === fileList.length ? autoDraftQuery : draftQuery}`, {
           files: payloadFiles
         });
+        published = result.published;
       }
 
-      toast.success(tr(draft ? "{0} fichier(s) ajoutés au brouillon." : "{0} fichier(s) téléversé(s).", { 0: fileList.length }));
+      toast.success(tr(draft && !published ? "{0} fichier(s) ajoutés au brouillon." : "{0} fichier(s) téléversé(s).", { 0: fileList.length }));
     } catch (err: any) {
       toast.error(err.message || tr("Erreur lors du téléversement"));
     } finally {
@@ -215,14 +219,14 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftC
     const body = new FormData();
     body.set('file', file);
     try {
-      const { sessionId } = await api.post<{ sessionId: string }>(`/endpoints/${endpointId}/uploads/zip?draft=true`, body);
+      const { sessionId } = await api.post<{ sessionId: string }>(`/endpoints/${endpointId}/uploads/zip?draft=true${draft ? '&autoPublish=true' : ''}`, body);
       if (controller.signal.aborted) return;
       setUploadStatusText(text('Extraction et vérification du ZIP…', 'Extracting and checking the ZIP…'));
       for (let attempt = 0; attempt < 90 && !controller.signal.aborted; attempt++) {
         const { session } = await api.get<{ session: { status: string; error_message?: string } }>(`/endpoints/${endpointId}/uploads/sessions/${sessionId}`);
         if (controller.signal.aborted) return;
         if (session.status === 'completed') {
-          toast.success(text('Archive ajoutée au brouillon.', 'Archive added to the draft.'));
+          toast.success(text('Archive importée.', 'Archive imported.'));
           return;
         }
         if (session.status === 'failed' || session.status === 'cancelled') throw new Error(
@@ -368,12 +372,12 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftC
   const handleSaveFile = async () => {
     setSavingFile(true);
     try {
-      await api.post(`/endpoints/${endpointId}/explorer/save-file${draftQuery}`, {
+      const { published } = await api.post<{ published: boolean }>(`/endpoints/${endpointId}/explorer/save-file${autoDraftQuery}`, {
         path: activeFilePath,
         content: fileContent,
         commitNow: true
       });
-      toast.success(tr(draft ? "Fichier enregistré dans le brouillon." : "Fichier modifié et nouvelle version publiée !"));
+      toast.success(tr(published ? "Fichier modifié et nouvelle version publiée !" : "Fichier enregistré dans le brouillon."));
       onDraftChange?.();
       setViewerOpen(false);
       loadDirectory(currentPrefix, search);
@@ -400,17 +404,18 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftC
 
   const handleDeleteItem = async (item: ExplorerItem) => {
     const isDir = item.isDir;
-    const msg = draft ? tr('Retirer « {0} » du brouillon ?', { 0: item.name }) : isDir
+    const msg = autoPublishEnabled ? text(`Retirer « ${item.name} » et publier la modification ?`, `Remove “${item.name}” and publish the change?`)
+      : draft ? tr('Retirer « {0} » du brouillon ?', { 0: item.name }) : isDir
       ? tr("Supprimer définitivement le dossier \"{0}/\" et tous ses fichiers ? Une nouvelle version sera créée.", { 0: item.name })
       : tr("Supprimer définitivement le fichier \"{0}\" ? Une nouvelle version sera créée.", { 0: item.name });
 
     if (!window.confirm(msg)) return;
 
     try {
-      await api.post(`/endpoints/${endpointId}/explorer/delete${draftQuery}`, {
+      const { published } = await api.post<{ published: boolean }>(`/endpoints/${endpointId}/explorer/delete${autoDraftQuery}`, {
         path: item.path
       });
-      toast.success(tr(draft ? "Suppression enregistrée dans le brouillon." : "Élément supprimé et version mise à jour"));
+      toast.success(tr(draft && !published ? "Suppression enregistrée dans le brouillon." : "Élément supprimé et version mise à jour"));
       onDraftChange?.();
       loadDirectory(currentPrefix, search);
     } catch (e: any) {
@@ -422,7 +427,7 @@ export const ExplorerPage: React.FC<ExplorerPageProps> = ({ endpointId, onDraftC
     setUndoingId(historyId);
     try {
       const res = await api.post<{ success: boolean; message: string }>(
-        `/endpoints/${endpointId}/explorer/undo/${historyId}${draftQuery}`
+        `/endpoints/${endpointId}/explorer/undo/${historyId}${autoDraftQuery}`
       );
       toast.success(res.message || tr("Modification annulée !"));
       onDraftChange?.();

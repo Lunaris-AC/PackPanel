@@ -12,6 +12,8 @@ export interface SealAndBuildReleasePayload {
   sessionId: string;
   immediatePublish?: boolean;
   allowEmptySnapshot?: boolean;
+  expectedBaseReleaseId?: string;
+  publishSettings?: boolean;
   releaseNotes?: string;
 }
 
@@ -38,8 +40,9 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
   endpointSlug: string;
   manifestJson: string;
   releaseDir: string;
+  published: boolean;
 }> {
-  const { sessionId, immediatePublish, allowEmptySnapshot = false, releaseNotes } = payload;
+  const { sessionId, immediatePublish, allowEmptySnapshot = false, expectedBaseReleaseId, publishSettings, releaseNotes } = payload;
 
   const sessionRes = await query(
     `SELECT s.*, e.slug as endpoint_slug, e.cleanup_rules, e.auto_publish
@@ -80,6 +83,9 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
 
     // Get active release for base merging if in add_replace mode
     const activeRelease = await getWorkingRelease(endpointId, client.query.bind(client) as typeof query);
+    if (expectedBaseReleaseId && activeRelease?.id !== expectedBaseReleaseId) {
+      throw Object.assign(new Error('Le brouillon a changé. Actualisez les fichiers avant de réessayer.'), { statusCode: 409 });
+    }
 
     // Determine next version number and release_id atomically under lock
     const maxVersionRes = await client.query(
@@ -196,7 +202,13 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
        FROM instances WHERE endpoint_id = $1 LIMIT 1`,
       [endpointId]
     );
-    const gameConfig = instCheck.rows.length > 0 ? instCheck.rows[0] : {};
+    let gameConfig = instCheck.rows[0] ?? {};
+    if (shouldAutoPublish && immediatePublish === undefined && !publishSettings) {
+      const { rows: [live] } = await client.query(
+        'SELECT game_config FROM releases WHERE endpoint_id = $1 AND is_active', [endpointId]
+      );
+      if (live?.game_config) gameConfig = live.game_config;
+    }
 
     // Insert release into database
     const relRes = await client.query(
@@ -234,10 +246,8 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
   });
 
   const shouldPublish = immediatePublish ?? shouldAutoPublish;
-  if (shouldPublish) {
-    await publishReleaseInternal(endpointId, createdReleaseId, endpointSlug, manifestJson,
-      path.join(ENDPOINTS_DIR, endpointSlug, 'releases', releaseIdStr), releaseNotes);
-  }
+  const published = shouldPublish && await publishReleaseInternal(endpointId, createdReleaseId, endpointSlug, manifestJson,
+    path.join(ENDPOINTS_DIR, endpointSlug, 'releases', releaseIdStr), releaseNotes, immediatePublish === undefined);
 
   // Mark upload session as completed
   await query(
@@ -252,7 +262,8 @@ export async function handleSealAndBuildRelease(payload: SealAndBuildReleasePayl
     endpointId,
     endpointSlug,
     manifestJson,
-    releaseDir
+    releaseDir,
+    published
   };
 }
 
@@ -292,8 +303,9 @@ export async function publishReleaseInternal(
   endpointSlug: string,
   manifestJson: string,
   releaseDir: string,
-  releaseNotes?: string
-): Promise<void> {
+  releaseNotes?: string,
+  automatic = false
+): Promise<boolean> {
   const endpointDir = path.join(ENDPOINTS_DIR, endpointSlug);
   fs.mkdirSync(endpointDir, { recursive: true, mode: 0o755 });
   fs.chmodSync(endpointDir, 0o755);
@@ -305,8 +317,27 @@ export async function publishReleaseInternal(
   const tempManifestPath = path.join(endpointDir, `index.php.tmp.${process.pid}.${Date.now()}.${nonce}`);
   const activeManifestPath = path.join(endpointDir, 'index.php');
 
-  await withTransaction(async (client) => {
+  return withTransaction(async (client) => {
     await client.query(`SELECT pg_advisory_xact_lock(hashtext('endpoint_pub_' || $1::text))`, [endpointId]);
+    if (automatic) {
+      const { rows: [state] } = await client.query(
+        `SELECT e.auto_publish AND NOT EXISTS (
+           SELECT 1 FROM releases newer WHERE newer.endpoint_id = e.id
+           AND newer.version_num > target.version_num AND newer.published_at IS NOT NULL
+         ) AND NOT EXISTS (
+           SELECT 1 FROM releases draft WHERE draft.endpoint_id = e.id AND draft.status = 'draft'
+           AND draft.version_num > COALESCE((
+             SELECT MAX(version_num) FROM releases published
+             WHERE published.endpoint_id = e.id AND published.published_at IS NOT NULL
+           ), 0)
+           AND draft.version_num < target.version_num
+           AND draft.created_by_user_id IS DISTINCT FROM target.created_by_user_id
+         ) AS allowed
+         FROM endpoints e JOIN releases target ON target.endpoint_id = e.id
+         WHERE e.id = $1 AND target.id = $2`, [endpointId, releaseDbId]
+      );
+      if (!state?.allowed) return false;
+    }
     if (!fs.existsSync(releaseDir)) {
       const draftDir = path.join(endpointDir, '.drafts', path.basename(releaseDir));
       if (!fs.existsSync(draftDir)) {
@@ -356,5 +387,6 @@ export async function publishReleaseInternal(
     );
     const instRes = await client.query('SELECT id FROM instances WHERE endpoint_id = $1', [endpointId]);
     for (const inst of instRes.rows) await writeV2ManifestToEndpoint(inst.id, client.query.bind(client) as typeof query);
+    return true;
   });
 }

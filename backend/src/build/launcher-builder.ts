@@ -8,7 +8,7 @@ import { hashFile } from '../storage/hasher';
 import { JobQueue } from '../jobs/queue';
 import { buildWindowsInstaller } from './windows-installer';
 import { buildPlayerPackage, playerExtensions } from './player-package';
-import { runtimeForInstaller } from './runtime-release';
+import { nativeRuntimeForInstaller, runtimeForInstaller, writeNativeUpdateMetadata } from './runtime-release';
 import { launcherBranding } from './launcher-branding';
 
 function createZipArchive(options: any) {
@@ -119,6 +119,7 @@ export async function buildLauncherArtifact(buildId: string, instanceId: string)
       }))
     };
 
+    const nativeRuntime = native && native !== 'windows' ? await nativeRuntimeForInstaller(native, version) : undefined;
     const archive = createZipArchive(installer || native ? { store: true } : { zlib: { level: 3 } });
     const output = fs.createWriteStream(runtimePath);
     const controller = new AbortController();
@@ -148,7 +149,7 @@ Lancement :
       await Promise.all([pipeline(archive, output), (async () => {
         for (const target of targets) {
           await query('UPDATE launcher_builds SET stage = $2 WHERE id = $1', [buildId, target]);
-          await appendDesktopRuntime(archive, target, launcherConfig, controller.signal, installer || native === 'windows' ? await runtimeForInstaller() : undefined, architecture);
+          await appendDesktopRuntime(archive, target, launcherConfig, controller.signal, installer || native === 'windows' ? await runtimeForInstaller() : nativeRuntime, architecture);
         }
         await query("UPDATE launcher_builds SET stage = 'archiving' WHERE id = $1", [buildId]);
         await archive.finalize();
@@ -174,7 +175,12 @@ Lancement :
     }
     await query("UPDATE launcher_builds SET stage = 'verifying' WHERE id = $1", [buildId]);
     const { sizeBytes: artifactSize, sha256: artifactSha256 } = await hashFile(temporaryPath);
+    if (nativeRuntime) await writeNativeUpdateMetadata(temporaryPath, {
+      kind: 'packpanel-native-v1', platform: nativeRuntime.platform, sequence: nativeRuntime.sequence,
+      instanceId, buildId, bytes: artifactSize, sha256: artifactSha256
+    });
     await fs.promises.rename(temporaryPath, artifactPath);
+    if (nativeRuntime) await fs.promises.rename(temporaryPath + '.update.json', artifactPath + '.update.json');
 
     // 6. Update build record
     const finalLogs = `[${new Date().toISOString()}] Compilation réussie.\n` +
@@ -193,6 +199,7 @@ Lancement :
     );
     if (!updated.rowCount) {
       await fs.promises.rm(artifactPath, { force: true });
+      if (nativeRuntime) await fs.promises.rm(artifactPath + '.update.json', { force: true });
       return null;
     }
 
@@ -205,6 +212,9 @@ Lancement :
     };
   } catch (err: any) {
     await fs.promises.rm(temporaryPath, { force: true }).catch(() => {});
+    await fs.promises.rm(temporaryPath + '.update.json', { force: true }).catch(() => {});
+    await fs.promises.rm(artifactPath, { force: true }).catch(() => {});
+    await fs.promises.rm(artifactPath + '.update.json', { force: true }).catch(() => {});
     await query(
       `UPDATE launcher_builds
        SET status = 'failed',

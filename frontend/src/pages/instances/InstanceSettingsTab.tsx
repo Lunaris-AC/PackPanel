@@ -125,7 +125,7 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         return;
       }
 
-      await api.put(`/v2/instances/${instance.id}`, {
+      const { published } = await api.put<{ published: boolean }>(`/v2/instances/${instance.id}`, {
         name,
         description,
         minecraftVersion,
@@ -140,7 +140,8 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         }
       });
 
-      toast.success(tr("Paramètres enregistrés en brouillon. N’oubliez pas de publier pour déployer aux joueurs !"));
+      toast.success(published ? text('Paramètres enregistrés et publiés.', 'Settings saved and published.')
+        : tr("Paramètres enregistrés en brouillon. N’oubliez pas de publier pour déployer aux joueurs !"));
       onRefresh();
     } catch (err: any) {
       toast.error(err.message || tr("Erreur lors de l’enregistrement"));
@@ -176,8 +177,11 @@ export const InstanceSettingsTab: React.FC<InstanceSettingsTabProps> = ({ instan
         <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
         <div>
           <span className="font-bold block">{tr("Principe des versions immuables")}</span>
-          <span>
-            {tr("Les modifications apportées ci-dessous restent en")} <strong>{tr("brouillon")}</strong>{tr(". La version active distribuée à vos joueurs ne sera mise à jour que lorsque vous déclencherez une")} <strong>{tr("publication")}</strong>  {tr("dans l'onglet dédié.")} </span>
+          {instance.endpoint_auto_publish && instance.permissions?.can_publish ? (
+            <span>{text('PackPanel publie automatiquement les changements de configuration du jeu.', 'PackPanel automatically publishes changes to the game configuration.')}</span>
+          ) : (
+            <span>{tr("Les modifications apportées ci-dessous restent en")} <strong>{tr("brouillon")}</strong>{tr(". La version active distribuée à vos joueurs ne sera mise à jour que lorsque vous déclencherez une")} <strong>{tr("publication")}</strong> {tr("dans l'onglet dédié.")}</span>
+          )}
         </div>
       </div>
 

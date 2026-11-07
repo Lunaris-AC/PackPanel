@@ -5,8 +5,8 @@ import path from 'path';
 import crypto from 'crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { query, withTransaction } from '../../db';
-import { authenticateRequest, canManageLauncherInstances, requireRole, requireInstancePermission, recordAuditLog } from '../../auth/middleware';
-import { config, ENDPOINTS_DIR, STAGING_DIR, getFilesBaseUrl } from '../../config';
+import { authenticateRequest, canManageLauncherInstances, mayPublishEndpoint, requireRole, requireInstancePermission, recordAuditLog } from '../../auth/middleware';
+import { config, ENDPOINTS_DIR, getFilesBaseUrl } from '../../config';
 import { validateCombination, resolveJavaRequirement, LoaderType } from '../../catalog';
 import { getWorkingRelease, handleSealAndBuildRelease, handlePublishRelease } from '../../jobs/handlers/publish';
 import { buildLauncherArtifact, reserveLauncherBuild } from '../../build/launcher-builder';
@@ -60,6 +60,14 @@ const LauncherSettingsSchema = z.object({
 function getGameConfig(instance: any) {
   const { minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies } = instance;
   return { minecraft_version, loader_type, loader_version, java_version, java_args, server_address, server_name, file_policies };
+}
+
+async function createSettingsSnapshotSession(endpointId: string, userId: string): Promise<string> {
+  const { rows } = await query(
+    `INSERT INTO upload_sessions (endpoint_id, user_id, mode, source_type, status, total_files, processed_files, failed_files)
+     VALUES ($1, $2, 'add_replace', 'manual', 'completed', 0, 0, 0) RETURNING id`, [endpointId, userId]
+  );
+  return rows[0].id;
 }
 
 function imageMime(buffer: Buffer) {
@@ -171,6 +179,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
         SELECT i.*,
                e.slug as endpoint_slug,
                e.name as endpoint_name,
+               e.auto_publish as endpoint_auto_publish,
                (SELECT release_id FROM releases WHERE endpoint_id = i.endpoint_id AND is_active = TRUE LIMIT 1) as active_release_id,
                (SELECT total_files FROM releases WHERE endpoint_id = i.endpoint_id AND is_active = TRUE LIMIT 1) as active_total_files,
                (SELECT total_bytes FROM releases WHERE endpoint_id = i.endpoint_id AND is_active = TRUE LIMIT 1) as active_total_bytes
@@ -433,7 +442,20 @@ export async function instanceRoutes(fastify: FastifyInstance) {
 
       const instance = updated.rows[0];
       await recordAuditLog(req.user!.userId, 'update', 'instance', targetId, data, req.ip);
-      return reply.send({ instance });
+      let published = false;
+      if (instance.endpoint_id) {
+        const { rows: [active] } = await query(
+          `SELECT r.game_config FROM endpoints e JOIN releases r ON r.endpoint_id = e.id AND r.is_active
+           WHERE e.id = $1 AND e.auto_publish`, [instance.endpoint_id]
+        );
+        if (active && !isDeepStrictEqual(getGameConfig(active.game_config ?? {}), getGameConfig(instance)) &&
+            await mayPublishEndpoint(req.user!.userId, instance.endpoint_id)) {
+          const sessionId = await createSettingsSnapshotSession(instance.endpoint_id, req.user!.userId);
+          ({ published } = await handleSealAndBuildRelease({ sessionId, publishSettings: true }));
+          if (published) await recordAuditLog(req.user!.userId, 'publish', 'instance', targetId, { automatic: true }, req.ip);
+        }
+      }
+      return reply.send({ instance, published });
     });
 
     // 5. Delete instance
@@ -499,15 +521,7 @@ export async function instanceRoutes(fastify: FastifyInstance) {
           return reply.send({ success: true, message: 'Instance publiée avec succès.' });
         }
         // Create an empty sync session (valid for Vanilla or config updates)
-        const newSess = await query(
-          `INSERT INTO upload_sessions (endpoint_id, user_id, mode, source_type, status, total_files, processed_files, failed_files)
-           VALUES ($1, $2, 'add_replace', 'manual', 'completed', 0, 0, 0)
-           RETURNING id`,
-          [inst.endpoint_id, req.user!.userId]
-        );
-        sessionId = newSess.rows[0].id;
-        const staging = path.join(STAGING_DIR, sessionId);
-        fs.mkdirSync(staging, { recursive: true, mode: 0o750 });
+        sessionId = await createSettingsSnapshotSession(inst.endpoint_id, req.user!.userId);
       }
 
       await handleSealAndBuildRelease({ sessionId, immediatePublish: true, releaseNotes });

@@ -27,8 +27,9 @@ export function installedWindowsRoot(instanceId: string, executable: string): st
       fs.existsSync(path.join(cached, 'ready'))) return cached;
 }
 
-async function readEnvelope(feed: string): Promise<unknown> {
+export async function readEnvelope(feed: string, allowMissing = false): Promise<unknown> {
   const response = await fetch(feed, { redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15_000) });
+  if (allowMissing && response.status === 404) return null;
   if (!response.ok || !response.body) throw new Error(`Launcher update feed: HTTP ${response.status}`);
   const chunks: Buffer[] = [];
   let size = 0;
